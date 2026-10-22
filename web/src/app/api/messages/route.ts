@@ -1,7 +1,12 @@
 import type { NextRequest } from "next/server";
-import * as z from "zod";
-import { listMessages, sendMessage } from "@/lib/realtime/hub";
-import { actorFor, conversationFor, jsonError, parseRole } from "@/lib/realtime/auth";
+import { api } from "@/lib/api";
+import { actorFor, errorResponse, jsonError, parseRole } from "@/lib/bff";
+
+// Patients always use their own conversation; doctors name the patient.
+function conversationId(actor: NonNullable<Awaited<ReturnType<typeof actorFor>>>, patientId: unknown) {
+  if (actor.session.role === "patient") return actor.session.userId;
+  return typeof patientId === "string" && patientId ? patientId : null;
+}
 
 /** Full history of one conversation. Used to catch up after the realtime stream reconnects. */
 export async function GET(req: NextRequest) {
@@ -9,28 +14,31 @@ export async function GET(req: NextRequest) {
   const actor = await actorFor(parseRole(params.get("role")));
   if (!actor) return jsonError("Unauthorized", 401);
 
-  const conversation = await conversationFor(actor, params.get("patientId") ?? undefined);
-  if (!conversation) return jsonError("Conversation not found.", 404);
+  const patientId = conversationId(actor, params.get("patientId"));
+  if (!patientId) return jsonError("patientId is required.", 400);
 
-  return Response.json({ messages: listMessages(conversation) });
+  try {
+    return Response.json({ messages: await api.listMessages(actor.ctx, patientId) });
+  } catch (err) {
+    return errorResponse(err);
+  }
 }
 
-const Body = z.object({
-  role: z.enum(["doctor", "patient"]),
-  patientId: z.string().optional(),
-  body: z.string().trim().min(1).max(2000),
-});
-
 export async function POST(req: Request) {
-  const parsed = Body.safeParse(await req.json().catch(() => null));
-  if (!parsed.success) return jsonError("Invalid message.", 400);
-
-  const actor = await actorFor(parseRole(parsed.data.role));
+  const input = (await req.json().catch(() => null)) as {
+    role?: unknown;
+    patientId?: unknown;
+    body?: unknown;
+  } | null;
+  const actor = await actorFor(parseRole(input?.role));
   if (!actor) return jsonError("Unauthorized", 401);
 
-  const conversation = await conversationFor(actor, parsed.data.patientId);
-  if (!conversation) return jsonError("Conversation not found.", 404);
+  const patientId = conversationId(actor, input?.patientId);
+  if (!patientId || typeof input?.body !== "string") return jsonError("Invalid message.", 400);
 
-  const message = sendMessage(conversation, actor.participant.role, parsed.data.body);
-  return Response.json({ message }, { status: 201 });
+  try {
+    return Response.json({ message: await api.sendMessage(actor.ctx, patientId, input.body) }, { status: 201 });
+  } catch (err) {
+    return errorResponse(err);
+  }
 }

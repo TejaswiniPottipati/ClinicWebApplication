@@ -1,13 +1,7 @@
-import * as z from "zod";
-import { acceptCall, declineCall, endCall } from "@/lib/realtime/hub";
-import { actorFor, jsonError, parseRole } from "@/lib/realtime/auth";
+import { api, type CallAction } from "@/lib/api";
+import { actorFor, errorResponse, jsonError, parseRole } from "@/lib/bff";
 
-const Body = z.object({
-  role: z.enum(["doctor", "patient"]),
-  action: z.enum(["accept", "decline", "end"]),
-  // Set when the client hangs up because media or the connection failed.
-  failed: z.boolean().optional(),
-});
+const ACTIONS: CallAction[] = ["accept", "decline", "end"];
 
 function parseJson(text: string): unknown {
   try {
@@ -17,21 +11,21 @@ function parseJson(text: string): unknown {
   }
 }
 
+/** Accept, decline or end a call. */
 export async function POST(req: Request, { params }: RouteContext<"/api/calls/[id]">) {
   const { id } = await params;
   // sendBeacon (used on page unload) posts plain text, so parse the body ourselves.
-  const parsed = Body.safeParse(parseJson(await req.text()));
-  if (!parsed.success) return jsonError("Invalid request.", 400);
+  const input = parseJson(await req.text()) as { role?: unknown; action?: unknown; failed?: unknown } | null;
 
-  const actor = await actorFor(parseRole(parsed.data.role));
+  const actor = await actorFor(parseRole(input?.role));
   if (!actor) return jsonError("Unauthorized", 401);
 
-  const { action, failed } = parsed.data;
-  const result =
-    action === "accept" ? acceptCall(id, actor.participant)
-    : action === "decline" ? declineCall(id, actor.participant)
-    : endCall(id, actor.participant, failed ? "failed" : undefined);
+  const action = ACTIONS.find((a) => a === input?.action);
+  if (!action) return jsonError("Invalid request.", 400);
 
-  if (!result.ok) return jsonError(result.error, result.status);
-  return Response.json({ call: result.call });
+  try {
+    return Response.json({ call: await api.updateCall(actor.ctx, id, action, input?.failed === true) });
+  } catch (err) {
+    return errorResponse(err);
+  }
 }

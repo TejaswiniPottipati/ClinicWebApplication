@@ -1,0 +1,10 @@
+# Dependencies and build output
+node_modules/
+dist/
+*.tsbuildinfo
+coverage/
+
+# Secrets: commit .env.example only
+.env
+.env.*
+!.env.example

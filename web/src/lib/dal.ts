@@ -1,12 +1,12 @@
 import "server-only";
 import { cache } from "react";
 import { notFound, redirect } from "next/navigation";
-import { api, type ApiContext } from "@/lib/api";
-import { listMessages } from "@/lib/realtime/hub";
+import { api, ApiError, type ApiContext } from "@/lib/api";
 import { getSession } from "@/lib/session";
 import type { PatientQuery } from "@/lib/types";
 
-// Data Access Layer: every read of clinic data goes through here so auth is always checked.
+// Data Access Layer: every read of clinic data goes through here so the session is always
+// checked first. The API then authorizes each request against the user's access token.
 
 const doctorSession = cache(async () => {
   const session = await getSession("doctor");
@@ -20,10 +20,7 @@ const patientSession = cache(async () => {
   return session;
 });
 
-const context = (s: { userId: string; accessToken: string }): ApiContext => ({
-  userId: s.userId,
-  accessToken: s.accessToken,
-});
+const context = (s: { accessToken: string }): ApiContext => ({ accessToken: s.accessToken });
 
 // ---- Doctor ----------------------------------------------------------------------
 
@@ -45,12 +42,12 @@ export async function getMyPatient(id: string) {
 
 /** Message history with one of the doctor's patients. */
 export async function getPatientConversation(patientId: string) {
-  const session = await doctorSession();
-  const patient = await getMyPatient(patientId);
-  return listMessages({
-    doctor: { id: session.userId, name: session.name },
-    patient: { id: patient.id, name: patient.name },
-  });
+  try {
+    return await api.listMessages(context(await doctorSession()), patientId);
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 404) notFound();
+    throw err;
+  }
 }
 
 // ---- Patient ---------------------------------------------------------------------
@@ -64,6 +61,6 @@ export const getMyCareTeam = cache(async () => {
 
 /** Message history with the patient's own doctor. */
 export async function getMyConversation() {
-  const team = await getMyCareTeam();
-  return listMessages(team);
+  const session = await patientSession();
+  return api.listMessages(context(session), session.userId);
 }

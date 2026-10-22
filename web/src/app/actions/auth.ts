@@ -2,7 +2,7 @@
 
 import { redirect } from "next/navigation";
 import * as z from "zod";
-import { api } from "@/lib/api";
+import { api, ApiError } from "@/lib/api";
 import { createSession, deleteSession } from "@/lib/session";
 import type { Role } from "@/lib/types";
 
@@ -35,7 +35,14 @@ async function login(role: Role, formData: FormData): Promise<LoginState> {
   }
 
   const { email, password } = parsed.data;
-  const result = await api.login(email, password);
+  let result;
+  try {
+    result = await api.login(email, password);
+  } catch (err) {
+    const unavailable = err instanceof ApiError && err.status === 503;
+    if (!unavailable) console.error(err);
+    return { message: unavailable ? err.message : "Sign-in failed. Please try again.", email };
+  }
   // Each portal only accepts its own kind of account.
   if (!result || result.user.role !== role) {
     return { message: "Invalid email or password.", email };

@@ -1,34 +1,21 @@
-import * as z from "zod";
-import { relaySignal } from "@/lib/realtime/hub";
-import { actorFor, jsonError, parseRole } from "@/lib/realtime/auth";
+import { api } from "@/lib/api";
+import { actorFor, errorResponse, jsonError, parseRole } from "@/lib/bff";
 import type { SignalData } from "@/lib/types";
 
-const Body = z.object({
-  role: z.enum(["doctor", "patient"]),
-  data: z.union([
-    z.object({ type: z.enum(["offer", "answer"]), sdp: z.string().max(100_000) }),
-    z.object({
-      type: z.literal("candidate"),
-      candidate: z.object({
-        candidate: z.string(),
-        sdpMid: z.string().nullish(),
-        sdpMLineIndex: z.number().nullish(),
-        usernameFragment: z.string().nullish(),
-      }),
-    }),
-  ]),
-});
-
-/** Relays WebRTC negotiation between the two browsers. Media itself flows peer to peer. */
+/** Relays WebRTC negotiation to the other participant via the API. Media itself flows peer to peer. */
 export async function POST(req: Request, { params }: RouteContext<"/api/calls/[id]/signal">) {
   const { id } = await params;
-  const parsed = Body.safeParse(await req.json().catch(() => null));
-  if (!parsed.success) return jsonError("Invalid signal.", 400);
+  const input = (await req.json().catch(() => null)) as { role?: unknown; data?: unknown } | null;
 
-  const actor = await actorFor(parseRole(parsed.data.role));
+  const actor = await actorFor(parseRole(input?.role));
   if (!actor) return jsonError("Unauthorized", 401);
+  if (!input?.data || typeof input.data !== "object") return jsonError("Invalid signal.", 400);
 
-  const result = relaySignal(id, actor.participant, parsed.data.data as SignalData);
-  if (!result.ok) return jsonError(result.error, result.status);
-  return new Response(null, { status: 204 });
+  try {
+    // The API validates the payload's shape.
+    await api.signal(actor.ctx, id, input.data as SignalData);
+    return new Response(null, { status: 204 });
+  } catch (err) {
+    return errorResponse(err);
+  }
 }
