@@ -1,0 +1,181 @@
+import Link from "next/link";
+import { Suspense, type ReactNode } from "react";
+import { CallButtons } from "@/components/calls/call-buttons";
+import { Conversation } from "@/components/chat/conversation";
+import { StatusBadge } from "@/components/status-badge";
+import { getMyPatient, getPatientConversation } from "@/lib/dal";
+import { ageFrom, formatDate, formatDateTime, initials } from "@/lib/format";
+
+export default function PatientPage({ params }: PageProps<"/patients/[id]">) {
+  return (
+    <div className="space-y-6">
+      <Link href="/patients" className="inline-flex items-center gap-1 text-sm text-slate-500 hover:text-slate-900">
+        <span aria-hidden>←</span> All patients
+      </Link>
+      <Suspense fallback={<RecordSkeleton />}>
+        <PatientRecord params={params} />
+      </Suspense>
+    </div>
+  );
+}
+
+async function PatientRecord({ params }: { params: PageProps<"/patients/[id]">["params"] }) {
+  const { id } = await params;
+  const patientId = decodeURIComponent(id);
+  const [patient, messages] = await Promise.all([
+    getMyPatient(patientId),
+    getPatientConversation(patientId),
+  ]);
+
+  return (
+    <>
+      <section className="flex flex-col gap-4 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex items-center gap-4">
+          <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-teal-50 text-lg font-semibold text-teal-700 ring-1 ring-teal-600/20">
+            {initials(patient.name)}
+          </span>
+          <div>
+            <div className="flex flex-wrap items-center gap-2">
+              <h1 className="text-2xl font-semibold tracking-tight">{patient.name}</h1>
+              <StatusBadge status={patient.status} />
+            </div>
+            <p className="mt-0.5 text-sm text-slate-500">
+              <span className="font-mono">{patient.id}</span> · {ageFrom(patient.dateOfBirth)} yrs ·{" "}
+              {patient.gender} · Blood type {patient.bloodType}
+            </p>
+          </div>
+        </div>
+        <CallButtons patientId={patient.id} />
+      </section>
+
+      <div className="grid gap-6 lg:grid-cols-3">
+        <div className="space-y-6 lg:col-span-2">
+          <section
+            id="messages"
+            className="flex h-[480px] scroll-mt-20 flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm"
+          >
+            <h2 className="border-b border-slate-200 px-5 py-3 text-sm font-semibold text-slate-900">
+              Messages
+            </h2>
+            <Conversation
+              patientId={patient.id}
+              counterpartName={patient.name.split(" ")[0]}
+              initialMessages={messages}
+              className="flex-1"
+            />
+          </section>
+
+          <Card title="Current medications">
+            {patient.medications.length === 0 ? (
+              <Empty>No active medications.</Empty>
+            ) : (
+              <ul className="divide-y divide-slate-100">
+                {patient.medications.map((m) => (
+                  <li key={m.name} className="flex flex-wrap items-baseline justify-between gap-2 py-3 first:pt-0 last:pb-0">
+                    <div>
+                      <p className="font-medium">
+                        {m.name} <span className="font-normal text-slate-500">{m.dosage}</span>
+                      </p>
+                      <p className="text-sm text-slate-500">{m.frequency}</p>
+                    </div>
+                    <p className="text-xs text-slate-400">Since {formatDate(m.startedOn)}</p>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </Card>
+
+          <Card title="Visit history">
+            <ol className="space-y-4">
+              {patient.visits.map((v) => (
+                <li key={v.date} className="relative border-l-2 border-slate-200 pl-4">
+                  <p className="text-xs text-slate-500">{formatDate(v.date)}</p>
+                  <p className="font-medium">{v.reason}</p>
+                  <p className="mt-0.5 text-sm text-slate-600">{v.notes}</p>
+                </li>
+              ))}
+            </ol>
+          </Card>
+        </div>
+
+        <div className="space-y-6">
+          <Card title="Next appointment">
+            {patient.nextAppointment ? (
+              <p className="text-lg font-medium">{formatDateTime(patient.nextAppointment)}</p>
+            ) : (
+              <Empty>None scheduled.</Empty>
+            )}
+            <p className="mt-1 text-xs text-slate-500">Last visit {formatDate(patient.lastVisit)}</p>
+          </Card>
+
+          <Card title="Conditions">
+            <TagList items={patient.conditions} empty="No recorded conditions." />
+          </Card>
+
+          <Card title="Allergies">
+            <TagList items={patient.allergies} empty="No known allergies." tone="alert" />
+          </Card>
+
+          <Card title="Contact">
+            <dl className="space-y-2 text-sm">
+              <Field label="Email (portal login)" value={patient.email} />
+              <Field label="Phone" value={patient.phone} />
+              <Field label="Date of birth" value={formatDate(patient.dateOfBirth)} />
+            </dl>
+          </Card>
+        </div>
+      </div>
+    </>
+  );
+}
+
+function Card({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+      <h2 className="mb-3 text-sm font-semibold text-slate-900">{title}</h2>
+      {children}
+    </section>
+  );
+}
+
+function Empty({ children }: { children: ReactNode }) {
+  return <p className="text-sm text-slate-500">{children}</p>;
+}
+
+function TagList({ items, empty, tone }: { items: string[]; empty: string; tone?: "alert" }) {
+  if (items.length === 0) return <Empty>{empty}</Empty>;
+  const color =
+    tone === "alert"
+      ? "bg-rose-50 text-rose-700 ring-rose-600/20"
+      : "bg-slate-50 text-slate-700 ring-slate-500/20";
+  return (
+    <ul className="flex flex-wrap gap-1.5">
+      {items.map((item) => (
+        <li key={item} className={`rounded-md px-2 py-1 text-xs font-medium ring-1 ring-inset ${color}`}>
+          {item}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function Field({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex justify-between gap-4">
+      <dt className="text-slate-500">{label}</dt>
+      <dd className="truncate text-right">{value}</dd>
+    </div>
+  );
+}
+
+function RecordSkeleton() {
+  return (
+    <div className="space-y-6" aria-busy="true" aria-label="Loading patient record">
+      <div className="h-28 animate-pulse rounded-2xl bg-slate-200/60" />
+      <div className="grid gap-6 lg:grid-cols-3">
+        <div className="h-72 animate-pulse rounded-2xl bg-slate-200/60 lg:col-span-2" />
+        <div className="h-72 animate-pulse rounded-2xl bg-slate-200/60" />
+      </div>
+    </div>
+  );
+}
