@@ -1,7 +1,7 @@
 import { Test } from '@nestjs/testing';
 import type { AuthUser } from '../common/auth.decorators.js';
 import type { RealtimeEvent } from '../common/types.js';
-import { DataModule } from '../data/data.module.js';
+import { MemoryDataModule } from '../data/memory/memory-data.module.js';
 import { MessagesRepository } from '../data/messages.repository.js';
 import { MessagesService } from '../messages/messages.service.js';
 import { PatientsService } from '../patients/patients.service.js';
@@ -26,7 +26,7 @@ describe('CallsService timers and concurrency', () => {
   beforeEach(async () => {
     vi.useFakeTimers();
     const moduleRef = await Test.createTestingModule({
-      imports: [DataModule],
+      imports: [MemoryDataModule],
       providers: [
         CallsService,
         MessagesService,

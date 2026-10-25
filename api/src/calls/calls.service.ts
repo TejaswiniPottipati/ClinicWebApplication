@@ -2,6 +2,7 @@ import {
   ConflictException,
   Injectable,
   NotFoundException,
+  type OnApplicationBootstrap,
   type OnModuleDestroy,
 } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
@@ -35,7 +36,9 @@ const participants = (call: Call): Participant[] => [
  * either side can hang up. The server only relays WebRTC signaling; media is peer to peer.
  */
 @Injectable()
-export class CallsService implements OnModuleDestroy {
+export class CallsService
+  implements OnApplicationBootstrap, OnModuleDestroy
+{
   private readonly ringTimers = new Map<
     string,
     ReturnType<typeof setTimeout>
@@ -164,6 +167,12 @@ export class CallsService implements OnModuleDestroy {
         ? { role: 'patient', id: call.patientId }
         : { role: 'doctor', id: call.doctorId };
     this.realtime.publish([to], { type: 'signal', callId, data });
+  }
+
+  /** Calls still ringing or active from a previous run can't continue: end and log them. */
+  async onApplicationBootstrap() {
+    const interrupted = await this.repo.failLive(new Date().toISOString());
+    for (const call of interrupted) await this.messages.logCall(call);
   }
 
   onModuleDestroy() {

@@ -1,0 +1,195 @@
+// Database schema for the clinic API. Change it, then run `npm run db:migrate -- --name <change>`
+// to generate a SQL migration in prisma/migrations/.
+
+generator client {
+  provider            = "prisma-client"
+  output              = "../src/generated/prisma"
+  moduleFormat        = "esm"
+  importFileExtension = "js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  doctor
+  patient
+}
+
+enum Specialty {
+  Physician
+  Surgeon
+}
+
+enum Gender {
+  Female
+  Male
+  Other
+}
+
+enum PatientStatus {
+  Stable
+  FollowUp @map("Follow-up")
+  Critical
+  PostOp   @map("Post-op")
+}
+
+enum CallKind {
+  audio
+  video
+}
+
+enum CallStatus {
+  ringing
+  active
+  ended
+}
+
+enum CallEndReason {
+  completed
+  declined
+  missed
+  cancelled
+  failed
+}
+
+/// A login account. Its id is the doctor's or patient's id.
+model User {
+  id           String   @id
+  email        String   @unique
+  name         String
+  role         Role
+  passwordHash String   @map("password_hash")
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  doctor  Doctor?
+  patient Patient?
+
+  @@map("users")
+}
+
+model Doctor {
+  id        String    @id
+  specialty Specialty
+
+  user     User      @relation(fields: [id], references: [id], onDelete: Cascade)
+  patients Patient[]
+  messages Message[]
+  calls    Call[]
+
+  @@map("doctors")
+}
+
+model Patient {
+  id              String        @id
+  doctorId        String        @map("doctor_id")
+  phone           String
+  gender          Gender
+  dateOfBirth     DateTime      @map("date_of_birth") @db.Date
+  bloodType       String        @map("blood_type")
+  status          PatientStatus
+  lastVisit       DateTime      @map("last_visit") @db.Date
+  /// Clinic-local date and time, no time zone.
+  nextAppointment DateTime?     @map("next_appointment") @db.Timestamp(0)
+
+  user        User         @relation(fields: [id], references: [id], onDelete: Cascade)
+  doctor      Doctor       @relation(fields: [doctorId], references: [id])
+  conditions  Condition[]
+  allergies   Allergy[]
+  medications Medication[]
+  visits      Visit[]
+  messages    Message[]
+  calls       Call[]
+
+  @@index([doctorId])
+  @@map("patients")
+}
+
+model Condition {
+  id        Int    @id @default(autoincrement())
+  patientId String @map("patient_id")
+  name      String
+
+  patient Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  @@index([patientId])
+  @@map("conditions")
+}
+
+model Allergy {
+  id        Int    @id @default(autoincrement())
+  patientId String @map("patient_id")
+  name      String
+
+  patient Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  @@index([patientId])
+  @@map("allergies")
+}
+
+model Medication {
+  id        Int      @id @default(autoincrement())
+  patientId String   @map("patient_id")
+  name      String
+  dosage    String
+  frequency String
+  startedOn DateTime @map("started_on") @db.Date
+
+  patient Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  @@index([patientId])
+  @@map("medications")
+}
+
+model Visit {
+  id        Int      @id @default(autoincrement())
+  patientId String   @map("patient_id")
+  date      DateTime @db.Date
+  reason    String
+  notes     String
+
+  patient Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  @@index([patientId, date])
+  @@map("visits")
+}
+
+/// A chat message. Each patient has one doctor, so patient_id identifies the conversation.
+model Message {
+  id        String   @id
+  patientId String   @map("patient_id")
+  doctorId  String   @map("doctor_id")
+  sender    Role
+  body      String
+  sentAt    DateTime @map("sent_at") @db.Timestamptz(3)
+  /// Set on call-log entries ("Missed video call").
+  callId    String?  @unique @map("call_id") @db.Uuid
+
+  patient Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  doctor  Doctor  @relation(fields: [doctorId], references: [id])
+  call    Call?   @relation(fields: [callId], references: [id])
+
+  @@index([patientId, sentAt])
+  @@map("messages")
+}
+
+model Call {
+  id         String         @id @db.Uuid
+  doctorId   String         @map("doctor_id")
+  patientId  String         @map("patient_id")
+  kind       CallKind
+  status     CallStatus
+  endReason  CallEndReason? @map("end_reason")
+  createdAt  DateTime       @map("created_at") @db.Timestamptz(3)
+  answeredAt DateTime?      @map("answered_at") @db.Timestamptz(3)
+  endedAt    DateTime?      @map("ended_at") @db.Timestamptz(3)
+
+  doctor  Doctor   @relation(fields: [doctorId], references: [id])
+  patient Patient  @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  log     Message?
+
+  @@index([doctorId, status])
+  @@index([patientId, status])
+  @@map("calls")
+}

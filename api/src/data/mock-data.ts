@@ -8,8 +8,8 @@ import type {
   Visit,
 } from '../common/types.js';
 
-// Generated demo data: 2 doctors with 20 patients each. Loaded by the in-memory repositories;
-// becomes the database seed later.
+// Generated demo data: 2 doctors with 20 patients each. Seeds the database (prisma/seed.ts)
+// and backs the in-memory repositories used by tests (memory/).
 
 /** Every demo account (doctors and patients) uses this password. Stored only as a hash. */
 export const DEMO_PASSWORD = 'Password123!';

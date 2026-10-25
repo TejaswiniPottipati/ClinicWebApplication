@@ -1,0 +1,23 @@
+# Local development database for api/. Start with `docker compose up -d`.
+# Credentials are for local development only; the port is bound to localhost.
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: cwa-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: clinic
+      POSTGRES_PASSWORD: clinic
+      POSTGRES_DB: clinic
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U clinic -d clinic"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  postgres-data:

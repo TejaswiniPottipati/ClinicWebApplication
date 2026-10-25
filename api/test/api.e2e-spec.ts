@@ -2,6 +2,8 @@ import type { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
 import { AppModule } from '../src/app.module.js';
+import { DataModule } from '../src/data/data.module.js';
+import { MemoryDataModule } from '../src/data/memory/memory-data.module.js';
 import type { Call, Message, RealtimeEvent } from '../src/common/types.js';
 import { configureApp } from '../src/setup.js';
 
@@ -69,9 +71,13 @@ const lastCall = (events: RealtimeEvent[]) =>
   events.filter((e) => e.type === 'call').at(-1)?.call;
 
 beforeAll(async () => {
+  // Mock data in memory: every run starts from the same demo clinic, no database needed.
   const moduleRef = await Test.createTestingModule({
     imports: [AppModule],
-  }).compile();
+  })
+    .overrideModule(DataModule)
+    .useModule(MemoryDataModule)
+    .compile();
   app = configureApp(moduleRef.createNestApplication());
   await app.listen(0);
   baseUrl = await app.getUrl();
