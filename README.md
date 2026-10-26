@@ -18,11 +18,14 @@ The browser only ever talks to `web/`. Its route handlers forward requests to th
 **Done:**
 - Separate sign-in pages and sessions for doctors (`/login`) and patients (`/portal/login`). The API issues JWTs; passwords are stored as scrypt hashes.
 - Doctor dashboard: patient list with search and status filters, and a patient record view. Each doctor sees only their own patients.
+- Patient record: demographics (incl. address, language, emergency contact), lab results grouped by collection date with abnormal flags, imaging reports, visit history, and medication history.
+- Prescribing: doctors add prescriptions (name, dosage, frequency, route, start date, instructions) and discontinue active ones, which then move to medication history.
 - Real-time messaging between each patient and their doctor.
 - Audio/video calls: the doctor calls, the patient can accept or decline, and either side can end the call. Every call is logged in the chat.
 
 **Known limitations:**
-- **Demo data.** Doctors, patients and records come from `api/src/data/mock-data.ts`, loaded by the seed script. Medications are read-only for now.
+- **Demo data.** Doctors, patients and records come from `api/src/data/mock-data.ts`, loaded by the seed script. Labs and imaging are read-only (no ordering or upload).
+- **No drug checks.** Prescribing blocks a duplicate active drug only; there are no allergy or interaction checks (allergies are shown on the form as a reminder).
 - **Single API instance.** Real-time fan-out is in-process, so running several API instances needs a shared broker (e.g. Redis pub/sub).
 - **Calls are peer-to-peer WebRTC with STUN only.** There's no TURN relay or SFU, so calls fail when the network blocks direct connectivity (symmetric NAT, strict firewalls).
 - **No unread indicators.** A doctor only sees a patient's new messages when that patient's record is open.
@@ -56,11 +59,11 @@ npm run dev                  # http://localhost:3000
 | `npm run db:up` / `db:down` | Start / stop the Postgres container. Data persists in the `postgres-data` volume (`docker compose down -v` deletes it). |
 | `npm run db:migrate -- --name <change>` | After editing `prisma/schema.prisma`: generate a SQL migration in `prisma/migrations/` and apply it. Commit the migration. |
 | `npm run db:deploy` | Apply pending migrations without generating new ones (CI, production). |
-| `npm run db:seed` | Load the demo data. Re-runnable: resets accounts and records, keeps messages. |
+| `npm run db:seed` | Load the demo data. Re-runnable: resets accounts and demo records, keeps messages and added prescriptions. |
 | `npm run db:reset` | Drop all data, re-apply every migration. Then `db:seed`. |
 | `npm run db:studio` | Browse the tables in Prisma Studio. |
 
-Tables: `users`, `doctors`, `patients`, `conditions`, `allergies`, `medications`, `visits`, `messages`, `calls`. A call-log message references its call (`messages.call_id`). On startup the API ends calls left ringing or active by a previous run as `failed`.
+Tables: `users`, `doctors`, `patients`, `conditions`, `allergies`, `medications` (with status, end date and prescribing doctor), `lab_results`, `imaging_reports`, `visits`, `messages`, `calls`. A call-log message references its call (`messages.call_id`). On startup the API ends calls left ringing or active by a previous run as `failed`.
 
 If `npm install` in `api/` fails with `Cannot read properties of null (reading 'edgesOut')`, that's an npm 10 bug. Use `npx npm@11 install` instead.
 
@@ -100,7 +103,9 @@ All routes need `Authorization: Bearer <token>` except `POST /auth/login` and `G
 | --- | --- | --- | --- |
 | `POST` | `/auth/login` | anyone | `{ email, password }` → `{ user, accessToken }` (8 h JWT) |
 | `GET` | `/patients?q&status` | doctor | Own patients (summaries) |
-| `GET` | `/patients/:id` | doctor | Full record; `404` if not the doctor's patient |
+| `GET` | `/patients/:id` | doctor | Full record (demographics, medications, labs, imaging, visits); `404` if not the doctor's patient |
+| `POST` | `/patients/:id/medications` | doctor | `{ name, dosage, frequency, route, instructions?, startedOn? }` → new active prescription; `409` if that drug is already active |
+| `POST` | `/patients/:id/medications/:medicationId/discontinue` | doctor | Ends an active prescription (kept as history); `409` if already discontinued |
 | `GET` | `/me/care-team` | patient | The patient and their doctor |
 | `GET` | `/conversations/:patientId/messages` | doctor, patient | History; only the two participants |
 | `POST` | `/conversations/:patientId/messages` | doctor, patient | `{ body }` → message, pushed to both |
@@ -159,7 +164,7 @@ All routes need `Authorization: Bearer <token>` except `POST /auth/login` and `G
    - Removes `peer.ts` and the `/signal` routes.
    - `CallsService` keeps call state: ringing, accept/decline/end and the call log.
 3. Shared types package for `api/` and `web/` (replacing the mirrored `types.ts`).
-4. Medication management.
+4. ~~Medication management.~~ Done (prescribe and discontinue).
 5. Unread message indicators and notifications for doctors.
 
 ## Git workflow

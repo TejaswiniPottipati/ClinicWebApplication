@@ -3,6 +3,7 @@ import { PrismaPg } from '@prisma/adapter-pg';
 import { hashPassword } from '../src/common/password.js';
 import {
   toDate,
+  toDbModality,
   toDbStatus,
   toLocalDateTime,
 } from '../src/data/prisma/mappers.js';
@@ -15,7 +16,7 @@ import {
 import { PrismaClient } from '../src/generated/prisma/client.js';
 
 // Loads the demo clinic (src/data/mock-data.ts) into the database. Safe to re-run: accounts and
-// records are reset to the demo values, and conversations keep any messages sent since.
+// records are reset to the demo values; messages and prescriptions added since are kept.
 // Runs after `prisma migrate reset` / `migrate dev`, or on its own with `npm run db:seed`.
 
 const prisma = new PrismaClient({
@@ -53,6 +54,11 @@ async function main() {
         gender: p.gender,
         dateOfBirth: toDate(p.dateOfBirth),
         bloodType: p.bloodType,
+        address: p.address,
+        preferredLanguage: p.preferredLanguage,
+        emergencyContactName: p.emergencyContact?.name ?? null,
+        emergencyContactRelationship: p.emergencyContact?.relationship ?? null,
+        emergencyContactPhone: p.emergencyContact?.phone ?? null,
         status: toDbStatus(p.status),
         lastVisit: toDate(p.lastVisit),
         nextAppointment: p.nextAppointment
@@ -71,12 +77,26 @@ async function main() {
       });
     }
 
-    // Child records are replaced wholesale.
+    // Conditions, allergies and visits are replaced wholesale.
     const patientId = { in: patients.map((p) => p.id) };
     await tx.condition.deleteMany({ where: { patientId } });
     await tx.allergy.deleteMany({ where: { patientId } });
-    await tx.medication.deleteMany({ where: { patientId } });
     await tx.visit.deleteMany({ where: { patientId } });
+
+    // Medications, labs and imaging: only the demo rows (by id), so new prescriptions survive.
+    const meds = patients.flatMap((p) => p.medications.map((m) => ({ p, m })));
+    const labs = patients.flatMap((p) => p.labResults.map((r) => ({ p, r })));
+    const imaging = patients.flatMap((p) =>
+      p.imagingReports.map((r) => ({ p, r })),
+    );
+    const ids = (rows: { id: string }[]) => ({ in: rows.map((r) => r.id) });
+    await tx.medication.deleteMany({
+      where: { id: ids(meds.map((x) => x.m)) },
+    });
+    await tx.labResult.deleteMany({ where: { id: ids(labs.map((x) => x.r)) } });
+    await tx.imagingReport.deleteMany({
+      where: { id: ids(imaging.map((x) => x.r)) },
+    });
 
     await tx.condition.createMany({
       data: patients.flatMap((p) =>
@@ -89,15 +109,43 @@ async function main() {
       ),
     });
     await tx.medication.createMany({
-      data: patients.flatMap((p) =>
-        p.medications.map((m) => ({
-          patientId: p.id,
-          name: m.name,
-          dosage: m.dosage,
-          frequency: m.frequency,
-          startedOn: toDate(m.startedOn),
-        })),
-      ),
+      data: meds.map(({ p, m }) => ({
+        id: m.id,
+        patientId: p.id,
+        name: m.name,
+        dosage: m.dosage,
+        frequency: m.frequency,
+        route: m.route,
+        instructions: m.instructions,
+        status: m.status,
+        startedOn: toDate(m.startedOn),
+        endedOn: m.endedOn ? toDate(m.endedOn) : null,
+        prescribedById: m.prescribedBy.id,
+      })),
+    });
+    await tx.labResult.createMany({
+      data: labs.map(({ p, r }) => ({
+        id: r.id,
+        patientId: p.id,
+        collectedOn: toDate(r.collectedOn),
+        test: r.test,
+        value: r.value,
+        unit: r.unit,
+        referenceRange: r.referenceRange,
+        flag: r.flag,
+      })),
+    });
+    await tx.imagingReport.createMany({
+      data: imaging.map(({ p, r }) => ({
+        id: r.id,
+        patientId: p.id,
+        performedOn: toDate(r.performedOn),
+        modality: toDbModality(r.modality),
+        study: r.study,
+        findings: r.findings,
+        impression: r.impression,
+        reportedBy: r.reportedBy,
+      })),
     });
     await tx.visit.createMany({
       data: patients.flatMap((p) =>

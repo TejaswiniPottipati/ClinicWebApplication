@@ -1,7 +1,15 @@
 import Link from "next/link";
-import { Suspense, type ReactNode } from "react";
+import { Suspense } from "react";
 import { CallButtons } from "@/components/calls/call-buttons";
 import { Conversation } from "@/components/chat/conversation";
+import {
+  Section as Card,
+  Demographics,
+  Empty,
+  ImagingReports,
+  LabResults,
+  Medications,
+} from "@/components/records/record-sections";
 import { StatusBadge } from "@/components/status-badge";
 import { getMyPatient, getPatientConversation } from "@/lib/dal";
 import { ageFrom, formatDate, formatDateTime, initials } from "@/lib/format";
@@ -65,25 +73,9 @@ async function PatientRecord({ params }: { params: PageProps<"/patients/[id]">["
             />
           </section>
 
-          <Card title="Current medications">
-            {patient.medications.length === 0 ? (
-              <Empty>No active medications.</Empty>
-            ) : (
-              <ul className="divide-y divide-slate-100">
-                {patient.medications.map((m) => (
-                  <li key={m.name} className="flex flex-wrap items-baseline justify-between gap-2 py-3 first:pt-0 last:pb-0">
-                    <div>
-                      <p className="font-medium">
-                        {m.name} <span className="font-normal text-slate-500">{m.dosage}</span>
-                      </p>
-                      <p className="text-sm text-slate-500">{m.frequency}</p>
-                    </div>
-                    <p className="text-xs text-slate-400">Since {formatDate(m.startedOn)}</p>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </Card>
+          <Medications patient={patient} />
+          <LabResults results={patient.labResults} />
+          <ImagingReports reports={patient.imagingReports} />
 
           <Card title="Visit history">
             <ol className="space-y-4">
@@ -116,30 +108,11 @@ async function PatientRecord({ params }: { params: PageProps<"/patients/[id]">["
             <TagList items={patient.allergies} empty="No known allergies." tone="alert" />
           </Card>
 
-          <Card title="Contact">
-            <dl className="space-y-2 text-sm">
-              <Field label="Email (portal login)" value={patient.email} />
-              <Field label="Phone" value={patient.phone} />
-              <Field label="Date of birth" value={formatDate(patient.dateOfBirth)} />
-            </dl>
-          </Card>
+          <Demographics patient={patient} />
         </div>
       </div>
     </>
   );
-}
-
-function Card({ title, children }: { title: string; children: ReactNode }) {
-  return (
-    <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-      <h2 className="mb-3 text-sm font-semibold text-slate-900">{title}</h2>
-      {children}
-    </section>
-  );
-}
-
-function Empty({ children }: { children: ReactNode }) {
-  return <p className="text-sm text-slate-500">{children}</p>;
 }
 
 function TagList({ items, empty, tone }: { items: string[]; empty: string; tone?: "alert" }) {
@@ -156,15 +129,6 @@ function TagList({ items, empty, tone }: { items: string[]; empty: string; tone?
         </li>
       ))}
     </ul>
-  );
-}
-
-function Field({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex justify-between gap-4">
-      <dt className="text-slate-500">{label}</dt>
-      <dd className="truncate text-right">{value}</dd>
-    </div>
   );
 }
 

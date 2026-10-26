@@ -1,11 +1,33 @@
-import { Controller, Get, Param, Query } from '@nestjs/common';
-import { IsIn, IsOptional, IsString, MaxLength } from 'class-validator';
+import {
+  Body,
+  Controller,
+  Get,
+  HttpCode,
+  Param,
+  Post,
+  Query,
+} from '@nestjs/common';
+import {
+  IsIn,
+  IsISO8601,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  Matches,
+  MaxLength,
+} from 'class-validator';
+import { Transform } from 'class-transformer';
 import {
   CurrentUser,
   Roles,
   type AuthUser,
 } from '../common/auth.decorators.js';
-import { PATIENT_STATUSES, type PatientStatus } from '../common/types.js';
+import {
+  MEDICATION_ROUTES,
+  PATIENT_STATUSES,
+  type MedicationRoute,
+  type PatientStatus,
+} from '../common/types.js';
 import { PatientsService } from './patients.service.js';
 
 export class ListPatientsQuery {
@@ -17,6 +39,43 @@ export class ListPatientsQuery {
   @IsOptional()
   @IsIn(PATIENT_STATUSES)
   status?: PatientStatus;
+}
+
+const trim = ({ value }: { value: unknown }) =>
+  typeof value === 'string' ? value.trim() : value;
+
+export class PrescribeDto {
+  @Transform(trim)
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(100)
+  name: string;
+
+  @Transform(trim)
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(50)
+  dosage: string;
+
+  @Transform(trim)
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(100)
+  frequency: string;
+
+  @IsIn(MEDICATION_ROUTES)
+  route: MedicationRoute;
+
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @MaxLength(500)
+  instructions?: string;
+
+  @IsOptional()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/, { message: 'startedOn must be YYYY-MM-DD' })
+  @IsISO8601({ strict: true })
+  startedOn?: string;
 }
 
 @Controller('patients')
@@ -33,6 +92,26 @@ export class PatientsController {
   @Get(':id')
   get(@CurrentUser() user: AuthUser, @Param('id') id: string) {
     return this.patients.getForDoctor(user.id, id);
+  }
+
+  /** Adds a prescription to the patient's record. */
+  @Post(':id/medications')
+  prescribe(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Body() rx: PrescribeDto,
+  ) {
+    return this.patients.prescribe(user, id, rx);
+  }
+
+  @Post(':id/medications/:medicationId/discontinue')
+  @HttpCode(200)
+  discontinue(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Param('medicationId') medicationId: string,
+  ) {
+    return this.patients.discontinue(user, id, medicationId);
   }
 }
 

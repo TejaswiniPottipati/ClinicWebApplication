@@ -1,9 +1,21 @@
 import { Global, Injectable, Module, type OnModuleInit } from '@nestjs/common';
 import { hashPassword } from '../../common/password.js';
-import type { Call, Doctor, Message, Participant } from '../../common/types.js';
+import type {
+  Call,
+  Doctor,
+  Medication,
+  Message,
+  Participant,
+  Patient,
+} from '../../common/types.js';
 import { CallsRepository } from '../calls.repository.js';
 import { MessagesRepository } from '../messages.repository.js';
-import { DEMO_PASSWORD, doctors, messages, patients } from '../mock-data.js';
+import {
+  DEMO_PASSWORD,
+  doctors,
+  messages,
+  patients as seedPatients,
+} from '../mock-data.js';
 import {
   PatientsRepository,
   type PatientFilter,
@@ -26,7 +38,7 @@ export class MemoryUsersRepository
     const passwordHash = await hashPassword(DEMO_PASSWORD);
     this.users = [
       ...doctors.map((d) => ({ ...d, role: 'doctor' as const })),
-      ...patients.map((p) => ({ ...p, role: 'patient' as const })),
+      ...seedPatients.map((p) => ({ ...p, role: 'patient' as const })),
     ].map(({ id, name, email, role }) => ({
       id,
       name,
@@ -42,19 +54,28 @@ export class MemoryUsersRepository
   }
 }
 
+/** Active first, newest started first; then history, most recently stopped first. Stable for ties. */
+const byStatusThenNewest = (a: Medication, b: Medication) =>
+  Number(a.status !== 'active') - Number(b.status !== 'active') ||
+  (b.endedOn ?? '').localeCompare(a.endedOn ?? '') ||
+  b.startedOn.localeCompare(a.startedOn);
+
 @Injectable()
 export class MemoryPatientsRepository extends PatientsRepository {
+  // A copy per instance, so prescriptions added by one test don't leak into another.
+  private readonly patients: Patient[] = structuredClone(seedPatients);
+
   async findDoctor(id: string): Promise<Doctor | null> {
     return doctors.find((d) => d.id === id) ?? null;
   }
 
   async findPatient(id: string) {
-    return patients.find((p) => p.id === id) ?? null;
+    return this.patients.find((p) => p.id === id) ?? null;
   }
 
   async listForDoctor(doctorId: string, filter: PatientFilter = {}) {
     const q = filter.q?.trim().toLowerCase();
-    return patients.filter(
+    return this.patients.filter(
       (p) =>
         p.doctorId === doctorId &&
         (!filter.status || p.status === filter.status) &&
@@ -63,6 +84,29 @@ export class MemoryPatientsRepository extends PatientsRepository {
           p.id.toLowerCase().includes(q) ||
           p.conditions.some((c) => c.toLowerCase().includes(q))),
     );
+  }
+
+  async findMedication(patientId: string, medicationId: string) {
+    const patient = await this.findPatient(patientId);
+    return patient?.medications.find((m) => m.id === medicationId) ?? null;
+  }
+
+  async addMedication(patientId: string, medication: Medication) {
+    const patient = (await this.findPatient(patientId))!;
+    patient.medications = [medication, ...patient.medications].sort(
+      byStatusThenNewest,
+    );
+    return medication;
+  }
+
+  async discontinueMedication(medicationId: string, endedOn: string) {
+    const patient = this.patients.find((p) =>
+      p.medications.some((m) => m.id === medicationId),
+    )!;
+    const medication = patient.medications.find((m) => m.id === medicationId)!;
+    Object.assign(medication, { status: 'discontinued', endedOn });
+    patient.medications.sort(byStatusThenNewest);
+    return medication;
   }
 }
 

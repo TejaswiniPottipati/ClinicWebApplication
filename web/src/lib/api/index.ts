@@ -4,7 +4,9 @@ import type {
   Call,
   CallKind,
   CareTeam,
+  Medication,
   Message,
+  NewPrescription,
   Patient,
   PatientQuery,
   PatientSummary,
@@ -30,6 +32,11 @@ export interface ClinicApi {
   getPatient(ctx: ApiContext, id: string): Promise<Patient | null>;
   /** For a signed-in patient: themselves and their assigned doctor. Null if not found. */
   getCareTeam(ctx: ApiContext): Promise<CareTeam | null>;
+
+  /** Doctor only, for their own patients. 409 if the same drug is already active. */
+  prescribe(ctx: ApiContext, patientId: string, rx: NewPrescription): Promise<Medication>;
+  /** 409 if already discontinued. */
+  discontinueMedication(ctx: ApiContext, patientId: string, medicationId: string): Promise<Medication>;
 
   listMessages(ctx: ApiContext, patientId: string): Promise<Message[]>;
   sendMessage(ctx: ApiContext, patientId: string, body: string): Promise<Message>;

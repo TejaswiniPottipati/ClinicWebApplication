@@ -3,7 +3,7 @@ import { cache } from "react";
 import { notFound, redirect } from "next/navigation";
 import { api, ApiError, type ApiContext } from "@/lib/api";
 import { getSession } from "@/lib/session";
-import type { PatientQuery } from "@/lib/types";
+import type { NewPrescription, PatientQuery } from "@/lib/types";
 
 // Data Access Layer: every read of clinic data goes through here so the session is always
 // checked first. The API then authorizes each request against the user's access token.
@@ -48,6 +48,14 @@ export async function getPatientConversation(patientId: string) {
     if (err instanceof ApiError && err.status === 404) notFound();
     throw err;
   }
+}
+
+export async function prescribe(patientId: string, rx: NewPrescription) {
+  return api.prescribe(context(await doctorSession()), patientId, rx);
+}
+
+export async function discontinueMedication(patientId: string, medicationId: string) {
+  return api.discontinueMedication(context(await doctorSession()), patientId, medicationId);
 }
 
 // ---- Patient ---------------------------------------------------------------------

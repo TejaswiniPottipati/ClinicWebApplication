@@ -194,6 +194,153 @@ describe('patients', () => {
   });
 });
 
+describe('clinical records', () => {
+  it('includes demographics, labs, imaging and medication history', async () => {
+    // P-1003 has the asthma profile: an inhaler, a stopped medication and a chest X-ray.
+    const { body } = await api()
+      .get('/patients/P-1003')
+      .set(auth(PHYSICIAN))
+      .expect(200);
+    expect(body).toMatchObject({
+      address: expect.any(String),
+      preferredLanguage: expect.any(String),
+      emergencyContact: {
+        name: expect.any(String),
+        relationship: expect.any(String),
+        phone: expect.any(String),
+      },
+    });
+    expect(body.medications.map((m: any) => m.status)).toEqual([
+      'active',
+      'discontinued',
+    ]);
+    expect(body.medications[1].endedOn).toEqual(expect.any(String));
+    expect(body.labResults.length).toBeGreaterThan(0);
+    expect(body.labResults[0]).toMatchObject({
+      test: expect.any(String),
+      value: expect.any(String),
+      flag: expect.stringMatching(/^(normal|low|high|critical)$/),
+    });
+    // Newest first.
+    const dates = body.labResults.map((r: any) => r.collectedOn);
+    expect(dates).toEqual([...dates].sort().reverse());
+    expect(body.imagingReports).toEqual([
+      expect.objectContaining({
+        modality: 'X-ray',
+        impression: expect.any(String),
+      }),
+    ]);
+  });
+
+  it('adds a prescription and discontinues it into history', async () => {
+    const rx = {
+      name: 'Vitamin D3',
+      dosage: '1000 IU',
+      frequency: 'Once daily',
+      route: 'Oral',
+      instructions: '  Take with food.  ',
+    };
+    const created = await api()
+      .post('/patients/P-1002/medications')
+      .set(auth(PHYSICIAN))
+      .send(rx)
+      .expect(201);
+    expect(created.body).toMatchObject({
+      id: expect.any(String),
+      ...rx,
+      instructions: 'Take with food.',
+      status: 'active',
+      endedOn: null,
+      prescribedBy: { id: 'doc-1', name: 'Dr. Anita Rao' },
+    });
+    expect(created.body.startedOn).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+
+    let record = await api().get('/patients/P-1002').set(auth(PHYSICIAN));
+    expect(record.body.medications[0].id).toBe(created.body.id);
+
+    // The same drug can't be active twice.
+    const duplicate = await api()
+      .post('/patients/P-1002/medications')
+      .set(auth(PHYSICIAN))
+      .send({ ...rx, name: 'vitamin d3' })
+      .expect(409);
+    expect(duplicate.body.message).toContain('already an active medication');
+
+    const stopped = await api()
+      .post(`/patients/P-1002/medications/${created.body.id}/discontinue`)
+      .set(auth(PHYSICIAN))
+      .expect(200);
+    expect(stopped.body).toMatchObject({
+      status: 'discontinued',
+      endedOn: expect.any(String),
+    });
+    await api()
+      .post(`/patients/P-1002/medications/${created.body.id}/discontinue`)
+      .set(auth(PHYSICIAN))
+      .expect(409);
+
+    record = await api().get('/patients/P-1002').set(auth(PHYSICIAN));
+    const actives = record.body.medications.filter(
+      (m: any) => m.status === 'active',
+    );
+    expect(actives.map((m: any) => m.id)).not.toContain(created.body.id);
+    expect(record.body.medications.map((m: any) => m.id)).toContain(
+      created.body.id,
+    );
+  });
+
+  it("is limited to the patient's own doctor", async () => {
+    const rx = {
+      name: 'Aspirin',
+      dosage: '81 mg',
+      frequency: 'Once daily',
+      route: 'Oral',
+    };
+    await api()
+      .post('/patients/P-1001/medications')
+      .set(auth(SURGEON))
+      .send(rx)
+      .expect(404);
+    await api()
+      .post('/patients/P-1001/medications')
+      .set(auth(PATIENT))
+      .send(rx)
+      .expect(403);
+    await api()
+      .post('/patients/P-1001/medications/med-P-1001-1/discontinue')
+      .set(auth(SURGEON))
+      .expect(404);
+    // A medication id from another patient.
+    await api()
+      .post('/patients/P-1001/medications/med-P-1002-1/discontinue')
+      .set(auth(PHYSICIAN))
+      .expect(404);
+  });
+
+  it('validates prescriptions', async () => {
+    const res = await api()
+      .post('/patients/P-1001/medications')
+      .set(auth(PHYSICIAN))
+      .send({
+        name: '  ',
+        dosage: '5 mg',
+        frequency: 'Daily',
+        route: 'Telepathic',
+        startedOn: '2026-13-40',
+        extra: true,
+      })
+      .expect(400);
+    expect(res.body.message).toEqual(
+      expect.arrayContaining([
+        'property extra should not exist',
+        'name should not be empty',
+        expect.stringContaining('route must be one of'),
+        expect.stringContaining('startedOn'),
+      ]),
+    );
+  });
+});
+
 describe('messages', () => {
   const path = '/conversations/P-1001/messages';
 

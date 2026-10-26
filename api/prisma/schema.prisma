@@ -35,6 +35,35 @@ enum PatientStatus {
   PostOp   @map("Post-op")
 }
 
+enum MedicationStatus {
+  active
+  discontinued
+}
+
+enum MedicationRoute {
+  Oral
+  Inhaled
+  Topical
+  Sublingual
+  Subcutaneous
+  Intramuscular
+  Intravenous
+}
+
+enum LabFlag {
+  normal
+  low
+  high
+  critical
+}
+
+enum ImagingModality {
+  XRay       @map("X-ray")
+  CT
+  MRI
+  Ultrasound
+}
+
 enum CallKind {
   audio
   video
@@ -73,34 +102,42 @@ model Doctor {
   id        String    @id
   specialty Specialty
 
-  user     User      @relation(fields: [id], references: [id], onDelete: Cascade)
-  patients Patient[]
-  messages Message[]
-  calls    Call[]
+  user          User         @relation(fields: [id], references: [id], onDelete: Cascade)
+  patients      Patient[]
+  prescriptions Medication[]
+  messages      Message[]
+  calls         Call[]
 
   @@map("doctors")
 }
 
 model Patient {
-  id              String        @id
-  doctorId        String        @map("doctor_id")
-  phone           String
-  gender          Gender
-  dateOfBirth     DateTime      @map("date_of_birth") @db.Date
-  bloodType       String        @map("blood_type")
-  status          PatientStatus
-  lastVisit       DateTime      @map("last_visit") @db.Date
+  id                           String        @id
+  doctorId                     String        @map("doctor_id")
+  phone                        String
+  gender                       Gender
+  dateOfBirth                  DateTime      @map("date_of_birth") @db.Date
+  bloodType                    String        @map("blood_type")
+  address                      String?
+  preferredLanguage            String?       @map("preferred_language")
+  emergencyContactName         String?       @map("emergency_contact_name")
+  emergencyContactRelationship String?       @map("emergency_contact_relationship")
+  emergencyContactPhone        String?       @map("emergency_contact_phone")
+  status                       PatientStatus
+  lastVisit                    DateTime      @map("last_visit") @db.Date
   /// Clinic-local date and time, no time zone.
-  nextAppointment DateTime?     @map("next_appointment") @db.Timestamp(0)
+  nextAppointment              DateTime?     @map("next_appointment") @db.Timestamp(0)
 
-  user        User         @relation(fields: [id], references: [id], onDelete: Cascade)
-  doctor      Doctor       @relation(fields: [doctorId], references: [id])
-  conditions  Condition[]
-  allergies   Allergy[]
-  medications Medication[]
-  visits      Visit[]
-  messages    Message[]
-  calls       Call[]
+  user           User            @relation(fields: [id], references: [id], onDelete: Cascade)
+  doctor         Doctor          @relation(fields: [doctorId], references: [id])
+  conditions     Condition[]
+  allergies      Allergy[]
+  medications    Medication[]
+  labResults     LabResult[]
+  imagingReports ImagingReport[]
+  visits         Visit[]
+  messages       Message[]
+  calls          Call[]
 
   @@index([doctorId])
   @@map("patients")
@@ -128,18 +165,58 @@ model Allergy {
   @@map("allergies")
 }
 
+/// A prescription. Discontinued ones are kept as medication history.
 model Medication {
-  id        Int      @id @default(autoincrement())
-  patientId String   @map("patient_id")
-  name      String
-  dosage    String
-  frequency String
-  startedOn DateTime @map("started_on") @db.Date
+  id             String           @id
+  patientId      String           @map("patient_id")
+  name           String
+  dosage         String
+  frequency      String
+  route          MedicationRoute
+  instructions   String?
+  status         MedicationStatus
+  startedOn      DateTime         @map("started_on") @db.Date
+  endedOn        DateTime?        @map("ended_on") @db.Date
+  prescribedById String           @map("prescribed_by_id")
+  createdAt      DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  patient      Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  prescribedBy Doctor  @relation(fields: [prescribedById], references: [id])
+
+  @@index([patientId, status])
+  @@map("medications")
+}
+
+model LabResult {
+  id             String   @id
+  patientId      String   @map("patient_id")
+  collectedOn    DateTime @map("collected_on") @db.Date
+  test           String
+  value          String
+  unit           String
+  referenceRange String   @map("reference_range")
+  flag           LabFlag
 
   patient Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
 
-  @@index([patientId])
-  @@map("medications")
+  @@index([patientId, collectedOn])
+  @@map("lab_results")
+}
+
+model ImagingReport {
+  id          String          @id
+  patientId   String          @map("patient_id")
+  performedOn DateTime        @map("performed_on") @db.Date
+  modality    ImagingModality
+  study       String
+  findings    String
+  impression  String
+  reportedBy  String          @map("reported_by")
+
+  patient Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  @@index([patientId, performedOn])
+  @@map("imaging_reports")
 }
 
 model Visit {

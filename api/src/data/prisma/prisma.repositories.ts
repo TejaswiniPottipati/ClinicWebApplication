@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import type {
   Call,
   Doctor,
+  Medication,
   Message,
   Participant,
   Patient,
@@ -16,11 +17,14 @@ import { UsersRepository, type UserRecord } from '../users.repository.js';
 import {
   callInclude,
   doctorInclude,
+  medicationInclude,
   messageInclude,
   patientInclude,
   toCall,
+  toDate,
   toDbStatus,
   toDoctor,
+  toMedication,
   toMessage,
   toPatient,
 } from './mappers.js';
@@ -92,6 +96,49 @@ export class PrismaPatientsRepository extends PatientsRepository {
       orderBy: { id: 'asc' },
     });
     return rows.map(toPatient);
+  }
+
+  async findMedication(
+    patientId: string,
+    medicationId: string,
+  ): Promise<Medication | null> {
+    const row = await this.db.medication.findFirst({
+      where: { id: medicationId, patientId },
+      include: medicationInclude,
+    });
+    return row && toMedication(row);
+  }
+
+  async addMedication(patientId: string, m: Medication): Promise<Medication> {
+    const row = await this.db.medication.create({
+      data: {
+        id: m.id,
+        patientId,
+        name: m.name,
+        dosage: m.dosage,
+        frequency: m.frequency,
+        route: m.route,
+        instructions: m.instructions,
+        status: m.status,
+        startedOn: toDate(m.startedOn),
+        endedOn: m.endedOn ? toDate(m.endedOn) : null,
+        prescribedById: m.prescribedBy.id,
+      },
+      include: medicationInclude,
+    });
+    return toMedication(row);
+  }
+
+  async discontinueMedication(
+    medicationId: string,
+    endedOn: string,
+  ): Promise<Medication> {
+    const row = await this.db.medication.update({
+      where: { id: medicationId },
+      data: { status: 'discontinued', endedOn: toDate(endedOn) },
+      include: medicationInclude,
+    });
+    return toMedication(row);
   }
 }
 

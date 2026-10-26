@@ -1,8 +1,15 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
+import { randomUUID } from 'node:crypto';
 import type { AuthUser } from '../common/auth.decorators.js';
 import type {
   CareTeam,
   Conversation,
+  Medication,
+  MedicationRoute,
   Patient,
   PatientSummary,
 } from '../common/types.js';
@@ -10,6 +17,18 @@ import {
   PatientsRepository,
   type PatientFilter,
 } from '../data/patients.repository.js';
+
+export interface NewPrescription {
+  name: string;
+  dosage: string;
+  frequency: string;
+  route: MedicationRoute;
+  instructions?: string;
+  startedOn?: string; // ISO date; defaults to today
+}
+
+/** Today's date as "YYYY-MM-DD" (UTC). */
+const today = () => new Date().toISOString().slice(0, 10);
 
 function toSummary(p: Patient): PatientSummary {
   const {
@@ -51,6 +70,53 @@ export class PatientsService {
     if (!patient || patient.doctorId !== doctorId)
       throw new NotFoundException('Patient not found.');
     return patient;
+  }
+
+  /** Adds a prescription to one of the doctor's patients. */
+  async prescribe(
+    doctor: AuthUser,
+    patientId: string,
+    rx: NewPrescription,
+  ): Promise<Medication> {
+    const patient = await this.getForDoctor(doctor.id, patientId);
+    const duplicate = patient.medications.find(
+      (m) =>
+        m.status === 'active' && m.name.toLowerCase() === rx.name.toLowerCase(),
+    );
+    if (duplicate) {
+      throw new ConflictException(
+        `${duplicate.name} is already an active medication. Discontinue it first to change the prescription.`,
+      );
+    }
+    return this.repo.addMedication(patient.id, {
+      id: randomUUID(),
+      name: rx.name,
+      dosage: rx.dosage,
+      frequency: rx.frequency,
+      route: rx.route,
+      instructions: rx.instructions || null,
+      status: 'active',
+      startedOn: rx.startedOn ?? today(),
+      endedOn: null,
+      prescribedBy: { id: doctor.id, name: doctor.name },
+    });
+  }
+
+  /** Stops an active medication; it stays on the record as history. */
+  async discontinue(
+    doctor: AuthUser,
+    patientId: string,
+    medicationId: string,
+  ): Promise<Medication> {
+    await this.getForDoctor(doctor.id, patientId);
+    const medication = await this.repo.findMedication(patientId, medicationId);
+    if (!medication) throw new NotFoundException('Medication not found.');
+    if (medication.status !== 'active')
+      throw new ConflictException('This medication is already discontinued.');
+    // Never before it started (a prescription dated in the future, stopped today).
+    const endedOn =
+      today() < medication.startedOn ? medication.startedOn : today();
+    return this.repo.discontinueMedication(medication.id, endedOn);
   }
 
   async getCareTeam(patientId: string): Promise<CareTeam> {

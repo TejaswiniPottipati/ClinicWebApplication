@@ -1,11 +1,14 @@
 import type {
   Call,
   Doctor,
+  ImagingModality,
+  Medication,
   Message,
   Patient,
   PatientStatus,
 } from '../../common/types.js';
 import {
+  ImagingModality as DbImagingModality,
   PatientStatus as DbPatientStatus,
   type Prisma,
 } from '../../generated/prisma/client.js';
@@ -35,6 +38,18 @@ const STATUS_FROM_DB = Object.fromEntries(
 
 export const toDbStatus = (s: PatientStatus) => STATUS_TO_DB[s];
 
+const MODALITY_TO_DB: Record<ImagingModality, DbImagingModality> = {
+  'X-ray': DbImagingModality.XRay,
+  CT: DbImagingModality.CT,
+  MRI: DbImagingModality.MRI,
+  Ultrasound: DbImagingModality.Ultrasound,
+};
+const MODALITY_FROM_DB = Object.fromEntries(
+  Object.entries(MODALITY_TO_DB).map(([api, db]) => [db, api]),
+) as Record<DbImagingModality, ImagingModality>;
+
+export const toDbModality = (m: ImagingModality) => MODALITY_TO_DB[m];
+
 // ---- Doctors & patients ------------------------------------------------------------
 
 export const doctorInclude = { user: true } satisfies Prisma.DoctorInclude;
@@ -51,11 +66,44 @@ export function toDoctor(
   };
 }
 
+export const medicationInclude = {
+  prescribedBy: { select: { id: true, user: { select: { name: true } } } },
+} satisfies Prisma.MedicationInclude;
+
+/** Active first, newest started first; then history, most recently stopped first. */
+export const medicationOrder = [
+  { status: 'asc' }, // enum order: active, discontinued
+  { endedOn: 'desc' },
+  { startedOn: 'desc' },
+  { createdAt: 'desc' },
+  { id: 'asc' },
+] satisfies Prisma.MedicationOrderByWithRelationInput[];
+
+export function toMedication(
+  row: Prisma.MedicationGetPayload<{ include: typeof medicationInclude }>,
+): Medication {
+  return {
+    id: row.id,
+    name: row.name,
+    dosage: row.dosage,
+    frequency: row.frequency,
+    route: row.route,
+    instructions: row.instructions,
+    status: row.status,
+    startedOn: fromDate(row.startedOn),
+    endedOn: row.endedOn ? fromDate(row.endedOn) : null,
+    prescribedBy: { id: row.prescribedBy.id, name: row.prescribedBy.user.name },
+  };
+}
+
 export const patientInclude = {
-  user: true,
+  // Not the whole user row: that would load the password hash with every record.
+  user: { select: { name: true, email: true } },
   conditions: { orderBy: { id: 'asc' } },
   allergies: { orderBy: { id: 'asc' } },
-  medications: { orderBy: { id: 'asc' } },
+  medications: { include: medicationInclude, orderBy: medicationOrder },
+  labResults: { orderBy: [{ collectedOn: 'desc' }, { id: 'asc' }] },
+  imagingReports: { orderBy: [{ performedOn: 'desc' }, { id: 'asc' }] },
   visits: { orderBy: { date: 'desc' } },
 } satisfies Prisma.PatientInclude;
 
@@ -71,14 +119,36 @@ export function toPatient(
     gender: row.gender,
     dateOfBirth: fromDate(row.dateOfBirth),
     bloodType: row.bloodType,
+    address: row.address,
+    preferredLanguage: row.preferredLanguage,
+    emergencyContact: row.emergencyContactName
+      ? {
+          name: row.emergencyContactName,
+          relationship: row.emergencyContactRelationship ?? '',
+          phone: row.emergencyContactPhone ?? '',
+        }
+      : null,
     status: STATUS_FROM_DB[row.status],
     conditions: row.conditions.map((c) => c.name),
     allergies: row.allergies.map((a) => a.name),
-    medications: row.medications.map((m) => ({
-      name: m.name,
-      dosage: m.dosage,
-      frequency: m.frequency,
-      startedOn: fromDate(m.startedOn),
+    medications: row.medications.map(toMedication),
+    labResults: row.labResults.map((r) => ({
+      id: r.id,
+      collectedOn: fromDate(r.collectedOn),
+      test: r.test,
+      value: r.value,
+      unit: r.unit,
+      referenceRange: r.referenceRange,
+      flag: r.flag,
+    })),
+    imagingReports: row.imagingReports.map((r) => ({
+      id: r.id,
+      performedOn: fromDate(r.performedOn),
+      modality: MODALITY_FROM_DB[r.modality],
+      study: r.study,
+      findings: r.findings,
+      impression: r.impression,
+      reportedBy: r.reportedBy,
     })),
     visits: row.visits.map((v) => ({
       date: fromDate(v.date),

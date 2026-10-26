@@ -20,11 +20,71 @@ export type PatientStatus = "Stable" | "Follow-up" | "Critical" | "Post-op";
 
 export type Gender = "Female" | "Male" | "Other";
 
+export type MedicationStatus = "active" | "discontinued";
+
+export const MEDICATION_ROUTES = [
+  "Oral",
+  "Inhaled",
+  "Topical",
+  "Sublingual",
+  "Subcutaneous",
+  "Intramuscular",
+  "Intravenous",
+] as const;
+
+export type MedicationRoute = (typeof MEDICATION_ROUTES)[number];
+
+/** A prescription. Discontinued ones stay on the record as medication history. */
 export interface Medication {
+  id: string;
   name: string;
   dosage: string;
   frequency: string;
+  route: MedicationRoute;
+  instructions: string | null;
+  status: MedicationStatus;
   startedOn: string; // ISO date
+  endedOn: string | null; // ISO date; set when discontinued
+  prescribedBy: { id: string; name: string };
+}
+
+export interface NewPrescription {
+  name: string;
+  dosage: string;
+  frequency: string;
+  route: MedicationRoute;
+  instructions?: string;
+  startedOn?: string; // ISO date; defaults to today
+}
+
+export type LabFlag = "normal" | "low" | "high" | "critical";
+
+export interface LabResult {
+  id: string;
+  collectedOn: string; // ISO date
+  test: string;
+  value: string;
+  unit: string;
+  referenceRange: string;
+  flag: LabFlag;
+}
+
+export type ImagingModality = "X-ray" | "CT" | "MRI" | "Ultrasound";
+
+export interface ImagingReport {
+  id: string;
+  performedOn: string; // ISO date
+  modality: ImagingModality;
+  study: string;
+  findings: string;
+  impression: string;
+  reportedBy: string;
+}
+
+export interface EmergencyContact {
+  name: string;
+  relationship: string;
+  phone: string;
 }
 
 export interface Visit {
@@ -42,10 +102,16 @@ export interface Patient {
   gender: Gender;
   dateOfBirth: string; // ISO date
   bloodType: string;
+  address: string | null;
+  preferredLanguage: string | null;
+  emergencyContact: EmergencyContact | null;
   status: PatientStatus;
   conditions: string[];
   allergies: string[];
+  /** Active first, then history; newest first within each. */
   medications: Medication[];
+  labResults: LabResult[]; // newest first
+  imagingReports: ImagingReport[]; // newest first
   visits: Visit[];
   lastVisit: string; // ISO date
   nextAppointment: string | null; // ISO datetime

@@ -3,6 +3,7 @@ import type {
   AuthResult,
   Call,
   CareTeam,
+  Medication,
   Message,
   Patient,
   PatientSummary,
@@ -75,6 +76,7 @@ async function orNull<T>(promise: Promise<T>): Promise<T | null> {
   }
 }
 
+const medications = (patientId: string) => `/patients/${encodeURIComponent(patientId)}/medications`;
 const conversation = (patientId: string) => `/conversations/${encodeURIComponent(patientId)}/messages`;
 const callPath = (callId: string, action: string) => `/calls/${encodeURIComponent(callId)}/${action}`;
 
@@ -103,6 +105,18 @@ export function httpApi(): ClinicApi {
 
     getCareTeam(ctx) {
       return orNull(json<CareTeam>("/me/care-team", { token: ctx.accessToken }));
+    },
+
+    prescribe(ctx, patientId, rx) {
+      return json<Medication>(medications(patientId), { method: "POST", body: rx, token: ctx.accessToken });
+    },
+
+    discontinueMedication(ctx, patientId, medicationId) {
+      return json<Medication>(`${medications(patientId)}/${encodeURIComponent(medicationId)}/discontinue`, {
+        method: "POST",
+        body: {},
+        token: ctx.accessToken,
+      });
     },
 
     listMessages(ctx, patientId) {
