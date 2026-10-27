@@ -1,6 +1,12 @@
 import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { STUN_ONLY, TURN_TTL_SECONDS, TurnService } from './turn.service.js';
+import {
+  parseStunUrls,
+  TURN_TTL_SECONDS,
+  TurnService,
+} from './turn.service.js';
+
+const STUN_ONLY = [{ urls: ['stun:stun.cloudflare.com:3478'] }];
 
 const turnFor = (env: Record<string, string>) =>
   new TurnService(new ConfigService(env));
@@ -19,6 +25,19 @@ describe('TurnService', () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch');
     expect(await turnFor({}).iceServers()).toEqual(STUN_ONLY);
     expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('uses the STUN servers from STUN_URLS', async () => {
+    expect(
+      await turnFor({
+        STUN_URLS: ' stun:stun.example.org:3478 , stuns:stun.example.org:5349 ',
+      }).iceServers(),
+    ).toEqual([
+      {
+        urls: ['stun:stun.example.org:3478', 'stuns:stun.example.org:5349'],
+      },
+    ]);
+    expect(parseStunUrls('')).toEqual(parseStunUrls(undefined));
   });
 
   it('requests short-lived credentials from Cloudflare and drops port 53', async () => {

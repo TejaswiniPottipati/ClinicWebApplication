@@ -3,6 +3,7 @@ import { ConfigModule } from '@nestjs/config';
 import { AppController } from './app.controller.js';
 import { AuthModule } from './auth/auth.module.js';
 import { CallsModule } from './calls/calls.module.js';
+import { parseStunUrls } from './calls/turn.service.js';
 import { DataModule } from './data/data.module.js';
 import { MessagesModule } from './messages/messages.module.js';
 import { PatientsModule } from './patients/patients.module.js';
@@ -18,6 +19,14 @@ function validateEnv(env: Record<string, unknown>) {
   if (!env.CLOUDFLARE_TURN_KEY_ID !== !env.CLOUDFLARE_TURN_API_TOKEN) {
     throw new Error(
       'Set both CLOUDFLARE_TURN_KEY_ID and CLOUDFLARE_TURN_API_TOKEN, or neither.',
+    );
+  }
+  const badStun = parseStunUrls(env.STUN_URLS).find(
+    (url) => !/^stuns?:/.test(url),
+  );
+  if (badStun) {
+    throw new Error(
+      `STUN_URLS must be comma-separated stun: or stuns: URLs (got "${badStun}").`,
     );
   }
   return env;

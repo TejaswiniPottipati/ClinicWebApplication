@@ -99,7 +99,7 @@ Set it up (free up to 1,000 GB/month of relayed traffic; only relayed calls use 
    ```
 3. Restart the API. It logs `Calls use Cloudflare TURN.` on startup.
 
-How it works: before a call connects, each browser asks `GET /api/calls/:id/ice-servers`. The API checks the user is in that live call, then requests short-lived credentials (4 h) from Cloudflare and returns them; the API token never reaches the browser. If Cloudflare is unreachable, the API falls back to STUN only.
+How it works: before a call connects, each browser asks `GET /api/calls/:id/ice-servers`. The API checks the user is in that live call, then requests short-lived credentials (4 h) from Cloudflare and returns them; the API token never reaches the browser. If Cloudflare is unreachable, the API falls back to STUN only. The STUN servers default to Cloudflare's free `stun:stun.cloudflare.com:3478`; set `STUN_URLS` in `api/.env` (comma-separated) to use others, e.g. a self-hosted coturn.
 
 To prove calls go through the relay, set `NEXT_PUBLIC_FORCE_TURN_RELAY=true` in `web/.env.local`, restart `npm run dev`, and make a call: it connects only via TURN (and fails after 30 s if TURN isn't configured). Remove the setting afterwards.
 
@@ -146,7 +146,7 @@ All routes need `Authorization: Bearer <token>` except `POST /auth/login` and `G
   - State changes to a call are serialized (per-call lock), so e.g. an accept can't race the ring timeout.
   - Each ended call is appended to the conversation as a call-log message.
 - **WebRTC:**
-  - Peer-to-peer `RTCPeerConnection`, no SFU. ICE servers come per call from `GET /calls/:id/ice-servers`: Cloudflare STUN, plus Cloudflare TURN when configured (see "Calls and TURN"). Candidate gathering waits for them.
+  - Peer-to-peer `RTCPeerConnection`, no SFU. ICE servers come per call from `GET /calls/:id/ice-servers`: STUN (`STUN_URLS`), or Cloudflare STUN + TURN when configured (see "Calls and TURN"). The browser has no ICE servers of its own; candidate gathering waits for the API's.
   - A connection that drops after connecting gets one ICE restart (the doctor sends a new offer) and 10 s to recover; a call that hasn't connected within 30 s of negotiating ends as `failed`.
   - The doctor is the offerer and sends the SDP offer once the patient accepts. The patient creates its peer before accepting, so the offer always has a target.
   - SDP and trickle ICE candidates go via `POST /calls/:id/signal` to the other participant's event stream. Signals for an ended call are dropped.

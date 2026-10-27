@@ -1,8 +1,7 @@
 import type { Role, SignalData } from "@/lib/types";
 
-// Used until the API answers (or if it can't): STUN lets peers on different networks find each
-// other's public addresses. The API adds Cloudflare TURN relays for strict NATs and firewalls.
-const FALLBACK_ICE_SERVERS: RTCIceServer[] = [{ urls: "stun:stun.cloudflare.com:3478" }];
+// ICE servers (STUN, plus Cloudflare TURN when configured) come from the API per call, so they're
+// configured in one place: api/.env.
 
 // Testing aid: NEXT_PUBLIC_FORCE_TURN_RELAY=true allows relayed connections only, so a call that
 // connects proves TURN works (and one without TURN configured fails).
@@ -45,10 +44,7 @@ export class CallPeer {
   private closed = false;
 
   constructor(private opts: CallPeerOptions) {
-    this.pc = new RTCPeerConnection({
-      iceServers: FALLBACK_ICE_SERVERS,
-      iceTransportPolicy: ICE_TRANSPORT_POLICY,
-    });
+    this.pc = new RTCPeerConnection({ iceTransportPolicy: ICE_TRANSPORT_POLICY });
     for (const track of opts.localStream.getTracks()) this.pc.addTrack(track, opts.localStream);
     this.iceReady = this.loadIceServers();
 
@@ -88,7 +84,10 @@ export class CallPeer {
     this.pc.close();
   }
 
-  /** Swaps in the call's STUN/TURN servers from the API. Keeps the fallback if that fails. */
+  /**
+   * Sets the call's STUN/TURN servers from the API. If that fails, the connection has none, so
+   * only peers on the same machine or network can still connect.
+   */
   private async loadIceServers() {
     try {
       const { callId, role } = this.opts;
@@ -99,7 +98,7 @@ export class CallPeer {
         this.pc.setConfiguration({ iceServers, iceTransportPolicy: ICE_TRANSPORT_POLICY });
       }
     } catch {
-      // Network error: a direct connection may still work with the fallback STUN server.
+      // Network error: see above.
     }
   }
 

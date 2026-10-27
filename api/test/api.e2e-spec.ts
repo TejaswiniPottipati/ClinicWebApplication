@@ -11,6 +11,7 @@ process.env.JWT_SECRET ??= 'test-secret-that-is-at-least-32-characters-long';
 // Never call Cloudflare from tests, even if api/.env has a TURN key.
 process.env.CLOUDFLARE_TURN_KEY_ID = '';
 process.env.CLOUDFLARE_TURN_API_TOKEN = '';
+process.env.STUN_URLS = '';
 
 const PASSWORD = 'Password123!';
 // Dr. Rao (doc-1) treats P-1001..P-1020; Dr. Okafor (doc-2) treats P-1021..P-1040.
@@ -454,7 +455,7 @@ describe('calls', () => {
         .set(auth(who))
         .expect(200);
       expect(ice.body).toEqual({
-        iceServers: [{ urls: 'stun:stun.cloudflare.com:3478' }],
+        iceServers: [{ urls: ['stun:stun.cloudflare.com:3478'] }],
       });
     }
     await api()
