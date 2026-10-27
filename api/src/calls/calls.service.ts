@@ -169,6 +169,13 @@ export class CallsService
     this.realtime.publish([to], { type: 'signal', callId, data });
   }
 
+  /** Throws unless the user takes part in this call and it hasn't ended. */
+  async assertLive(user: AuthUser, callId: string): Promise<void> {
+    const call = await this.findFor(user, callId);
+    if (call.status === 'ended')
+      throw new ConflictException('This call has ended.');
+  }
+
   /** Calls still ringing or active from a previous run can't continue: end and log them. */
   async onApplicationBootstrap() {
     const interrupted = await this.repo.failLive(new Date().toISOString());

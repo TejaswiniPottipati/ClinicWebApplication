@@ -27,7 +27,7 @@ The browser only ever talks to `web/`. Its route handlers forward requests to th
 - **Demo data.** Doctors, patients and records come from `api/src/data/mock-data.ts`, loaded by the seed script. Labs and imaging are read-only (no ordering or upload).
 - **No drug checks.** Prescribing blocks a duplicate active drug only; there are no allergy or interaction checks (allergies are shown on the form as a reminder).
 - **Single API instance.** Real-time fan-out is in-process, so running several API instances needs a shared broker (e.g. Redis pub/sub).
-- **Calls are peer-to-peer WebRTC with STUN only.** There's no TURN relay or SFU, so calls fail when the network blocks direct connectivity (symmetric NAT, strict firewalls).
+- **One-to-one calls only.** Calls are peer-to-peer WebRTC (with an optional Cloudflare TURN relay), so there are no group calls or recordings. Without a TURN key, calls fail when the network blocks direct connectivity (symmetric NAT, strict firewalls).
 - **No unread indicators.** A doctor only sees a patient's new messages when that patient's record is open.
 - **Portal must be open for calls.** A patient only receives a call while the portal is open in their browser.
 
@@ -85,11 +85,29 @@ Doctors and patients have separate session cookies, so both can be signed in in 
 
 Calls need microphone (and camera) permission and only work on `localhost` or https.
 
+### Calls and TURN (Cloudflare)
+
+Calls connect directly between the browsers when the networks allow it. When they don't (mobile carrier NAT, hospital or corporate firewalls), media goes through a TURN relay. The app uses Cloudflare's TURN service; it's optional, and without it calls use STUN only.
+
+Set it up (free up to 1,000 GB/month of relayed traffic; only relayed calls use it):
+
+1. In the Cloudflare dashboard, go to **Realtime → TURN Server** and create a TURN key.
+2. Copy the key ID and API token into `api/.env` (never commit them):
+   ```
+   CLOUDFLARE_TURN_KEY_ID=...
+   CLOUDFLARE_TURN_API_TOKEN=...
+   ```
+3. Restart the API. It logs `Calls use Cloudflare TURN.` on startup.
+
+How it works: before a call connects, each browser asks `GET /api/calls/:id/ice-servers`. The API checks the user is in that live call, then requests short-lived credentials (4 h) from Cloudflare and returns them; the API token never reaches the browser. If Cloudflare is unreachable, the API falls back to STUN only.
+
+To prove calls go through the relay, set `NEXT_PUBLIC_FORCE_TURN_RELAY=true` in `web/.env.local`, restart `npm run dev`, and make a call: it connects only via TURN (and fails after 30 s if TURN isn't configured). Remove the setting afterwards.
+
 ### Tests
 
 ```bash
 cd api
-npm test           # unit: call ring timeout, disconnect grace, concurrency (fake timers)
+npm test           # unit: call ring timeout, disconnect grace, concurrency (fake timers), TURN credentials
 npm run test:e2e   # e2e over HTTP + SSE: auth, access rules, messaging, call flow, validation
 ```
 
@@ -113,6 +131,7 @@ All routes need `Authorization: Bearer <token>` except `POST /auth/login` and `G
 | `POST` | `/calls/:id/accept` · `/decline` | patient | Answer or refuse a ringing call |
 | `POST` | `/calls/:id/end` | participant | `{ failed? }`; cancels if still ringing |
 | `POST` | `/calls/:id/signal` | participant | WebRTC SDP offer/answer or ICE candidate for the other side |
+| `GET` | `/calls/:id/ice-servers` | participant | `{ iceServers }`: STUN, plus short-lived Cloudflare TURN credentials when configured; `409` once the call has ended |
 | `GET` | `/events` | any | Server-Sent Events stream (see below) |
 | `GET` | `/health` | anyone | Liveness |
 
@@ -127,7 +146,8 @@ All routes need `Authorization: Bearer <token>` except `POST /auth/login` and `G
   - State changes to a call are serialized (per-call lock), so e.g. an accept can't race the ring timeout.
   - Each ended call is appended to the conversation as a call-log message.
 - **WebRTC:**
-  - Peer-to-peer `RTCPeerConnection`; STUN only (`stun.l.google.com`), no TURN, no SFU.
+  - Peer-to-peer `RTCPeerConnection`, no SFU. ICE servers come per call from `GET /calls/:id/ice-servers`: Cloudflare STUN, plus Cloudflare TURN when configured (see "Calls and TURN"). Candidate gathering waits for them.
+  - A connection that drops after connecting gets one ICE restart (the doctor sends a new offer) and 10 s to recover; a call that hasn't connected within 30 s of negotiating ends as `failed`.
   - The doctor is the offerer and sends the SDP offer once the patient accepts. The patient creates its peer before accepting, so the offer always has a target.
   - SDP and trickle ICE candidates go via `POST /calls/:id/signal` to the other participant's event stream. Signals for an ended call are dropped.
   - Signals are applied and sent in order; early ICE candidates are buffered until the remote description is set.
@@ -158,11 +178,7 @@ All routes need `Authorization: Bearer <token>` except `POST /auth/login` and `G
 ## Roadmap
 
 1. ~~Database: PostgreSQL with Prisma, in `api/`.~~ Done.
-2. **Calls on Cloudflare RealtimeKit.**
-   - Replaces peer-to-peer WebRTC with Cloudflare's managed SFU.
-   - The API creates a meeting and a participant token per call; clients join with the RealtimeKit SDK.
-   - Removes `peer.ts` and the `/signal` routes.
-   - `CallsService` keeps call state: ringing, accept/decline/end and the call log.
+2. ~~Cloudflare TURN relay for calls.~~ Done. Later, if group calls or recording are needed: Cloudflare RealtimeKit (managed SFU, paid per participant-minute), replacing `peer.ts` and the `/signal` routes.
 3. Shared types package for `api/` and `web/` (replacing the mirrored `types.ts`).
 4. ~~Medication management.~~ Done (prescribe and discontinue).
 5. Unread message indicators and notifications for doctors.

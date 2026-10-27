@@ -15,6 +15,11 @@ function validateEnv(env: Record<string, unknown>) {
       'JWT_SECRET must be set to at least 32 characters. Copy .env.example to .env.',
     );
   }
+  if (!env.CLOUDFLARE_TURN_KEY_ID !== !env.CLOUDFLARE_TURN_API_TOKEN) {
+    throw new Error(
+      'Set both CLOUDFLARE_TURN_KEY_ID and CLOUDFLARE_TURN_API_TOKEN, or neither.',
+    );
+  }
   return env;
 }
 

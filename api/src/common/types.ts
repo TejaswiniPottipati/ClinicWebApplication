@@ -193,6 +193,13 @@ export type SignalData =
   | { type: 'offer' | 'answer'; sdp: string }
   | { type: 'candidate'; candidate: IceCandidate };
 
+/** STUN/TURN servers for a call's RTCPeerConnection (the browser's RTCIceServer). */
+export interface IceServer {
+  urls: string | string[];
+  username?: string;
+  credential?: string;
+}
+
 export type RealtimeEvent =
   | { type: 'message'; message: Message }
   | { type: 'call'; call: Call }
