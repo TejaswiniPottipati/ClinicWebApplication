@@ -4,10 +4,11 @@ import { PatientsModule } from '../patients/patients.module.js';
 import { RealtimeModule } from '../realtime/realtime.module.js';
 import { CallsController } from './calls.controller.js';
 import { CallsService } from './calls.service.js';
+import { TurnService } from './turn.service.js';
 
 @Module({
   imports: [PatientsModule, MessagesModule, RealtimeModule],
   controllers: [CallsController],
-  providers: [CallsService],
+  providers: [CallsService, TurnService],
 })
 export class CallsModule {}

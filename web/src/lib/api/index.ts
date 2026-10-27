@@ -44,6 +44,8 @@ export interface ClinicApi {
   startCall(ctx: ApiContext, patientId: string, kind: CallKind): Promise<Call>;
   updateCall(ctx: ApiContext, callId: string, action: CallAction, failed?: boolean): Promise<Call>;
   signal(ctx: ApiContext, callId: string, data: SignalData): Promise<void>;
+  /** STUN/TURN servers for a call the user takes part in. 409 once the call has ended. */
+  getIceServers(ctx: ApiContext, callId: string): Promise<RTCIceServer[]>;
 
   /** Opens the caller's Server-Sent Events stream; the response body is the raw stream. */
   openEvents(ctx: ApiContext, signal: AbortSignal): Promise<Response>;

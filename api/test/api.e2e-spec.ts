@@ -8,6 +8,10 @@ import type { Call, Message, RealtimeEvent } from '../src/common/types.js';
 import { configureApp } from '../src/setup.js';
 
 process.env.JWT_SECRET ??= 'test-secret-that-is-at-least-32-characters-long';
+// Never call Cloudflare from tests, even if api/.env has a TURN key.
+process.env.CLOUDFLARE_TURN_KEY_ID = '';
+process.env.CLOUDFLARE_TURN_API_TOKEN = '';
+process.env.STUN_URLS = '';
 
 const PASSWORD = 'Password123!';
 // Dr. Rao (doc-1) treats P-1001..P-1020; Dr. Okafor (doc-2) treats P-1021..P-1040.
@@ -444,6 +448,21 @@ describe('calls', () => {
       .send({ type: 'offer', sdp: 'x' })
       .expect(409);
 
+    // Both participants get ICE servers (STUN only here: no TURN key in tests); strangers don't.
+    for (const who of [PHYSICIAN, PATIENT]) {
+      const ice = await api()
+        .get(`/calls/${call.id}/ice-servers`)
+        .set(auth(who))
+        .expect(200);
+      expect(ice.body).toEqual({
+        iceServers: [{ urls: ['stun:stun.cloudflare.com:3478'] }],
+      });
+    }
+    await api()
+      .get(`/calls/${call.id}/ice-servers`)
+      .set(auth(SURGEON))
+      .expect(404);
+
     await api().post(`/calls/${call.id}/accept`).set(auth(PATIENT)).expect(200);
     await until(() => lastCall(doctorStream.events)?.status === 'active');
     await api().post(`/calls/${call.id}/accept`).set(auth(PATIENT)).expect(409);
@@ -502,6 +521,11 @@ describe('calls', () => {
       .set(auth(PHYSICIAN))
       .send({ type: 'candidate', candidate: { candidate: 'late' } })
       .expect(204);
+    // ...but an ended call gets no more relay credentials.
+    await api()
+      .get(`/calls/${call.id}/ice-servers`)
+      .set(auth(PHYSICIAN))
+      .expect(409);
 
     const log = await api()
       .get('/conversations/P-1001/messages')

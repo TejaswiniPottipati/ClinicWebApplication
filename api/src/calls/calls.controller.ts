@@ -1,4 +1,4 @@
-import { Body, Controller, HttpCode, Param, Post } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Param, Post } from '@nestjs/common';
 import { Type } from 'class-transformer';
 import {
   IsBoolean,
@@ -16,8 +16,9 @@ import {
   Roles,
   type AuthUser,
 } from '../common/auth.decorators.js';
-import type { CallKind, SignalData } from '../common/types.js';
+import type { CallKind, IceServer, SignalData } from '../common/types.js';
 import { CallsService } from './calls.service.js';
+import { TurnService } from './turn.service.js';
 
 export class StartCallDto {
   @IsString()
@@ -70,7 +71,10 @@ export class SignalDto {
 
 @Controller('calls')
 export class CallsController {
-  constructor(private readonly calls: CallsService) {}
+  constructor(
+    private readonly calls: CallsService,
+    private readonly turn: TurnService,
+  ) {}
 
   /** A doctor rings one of their patients. */
   @Post()
@@ -101,6 +105,19 @@ export class CallsController {
     @Body() dto: EndCallDto,
   ) {
     return this.calls.end(user, id, dto.failed);
+  }
+
+  /**
+   * STUN/TURN servers for this call's connection. Only participants of a live call get them,
+   * so TURN credentials (which cost bandwidth) aren't handed out to anyone who is signed in.
+   */
+  @Get(':id/ice-servers')
+  async iceServers(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+  ): Promise<{ iceServers: IceServer[] }> {
+    await this.calls.assertLive(user, id);
+    return { iceServers: await this.turn.iceServers() };
   }
 
   /** Relays WebRTC negotiation to the other participant. */

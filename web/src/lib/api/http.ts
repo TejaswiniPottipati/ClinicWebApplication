@@ -143,6 +143,13 @@ export function httpApi(): ClinicApi {
       await send(callPath(callId, "signal"), { method: "POST", body: data, token: ctx.accessToken });
     },
 
+    async getIceServers(ctx, callId) {
+      const body = await json<{ iceServers: RTCIceServer[] }>(callPath(callId, "ice-servers"), {
+        token: ctx.accessToken,
+      });
+      return body.iceServers;
+    },
+
     openEvents(ctx, signal) {
       return send("/events", { token: ctx.accessToken, signal });
     },
