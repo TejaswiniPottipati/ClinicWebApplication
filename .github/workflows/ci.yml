@@ -1,0 +1,75 @@
+# Runs on every pull request and every push to main. Render deploys the API only after these
+# checks pass on main (render.yaml: autoDeployTrigger: checksPass); Vercel deploys the web app
+# on every push, so protect main with required checks (see README, "Deployment").
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  api:
+    name: API
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: api
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: clinic
+          POSTGRES_PASSWORD: clinic
+          POSTGRES_DB: clinic
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U clinic"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://clinic:clinic@localhost:5432/clinic
+      JWT_SECRET: ci-only-secret-that-is-at-least-32-characters-long
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: api/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npx tsc --noEmit
+      - run: npm test
+      - run: npm run test:e2e
+      # The same migrations and seed production runs, against a fresh database.
+      - run: npx prisma migrate deploy
+      - run: npm run db:seed
+      - run: npm run build
+
+  web:
+    name: Web
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    env:
+      # Placeholders: the build doesn't call the API or read sessions.
+      SESSION_SECRET: ci-only-session-secret-not-used-in-production
+      API_URL: http://localhost:4000
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      # Type-checks too.
+      - run: npm run build
