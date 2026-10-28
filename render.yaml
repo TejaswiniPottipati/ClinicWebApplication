@@ -1,0 +1,29 @@
+# Render Blueprint for the API (api/). In Render: New > Blueprint, pick this repo.
+# The web app (web/) deploys on Vercel instead; see README, "Deployment".
+services:
+  - type: web
+    name: cwa-api
+    runtime: node
+    plan: free
+    rootDir: api
+    branch: main
+    # Deploy a push to main only after the GitHub CI checks pass on it.
+    autoDeployTrigger: checksPass
+    # Migrations run in the build because the free plan has no pre-deploy step. A failed migration
+    # fails the deploy and the previous version keeps running.
+    buildCommand: npm ci && npx prisma migrate deploy && npm run build
+    startCommand: npm run start:prod
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: JWT_SECRET
+        generateValue: true
+      # Asked for when the Blueprint is created. Neon: use the direct (not pooled) connection string.
+      - key: DATABASE_URL
+        sync: false
+      # Optional: Cloudflare TURN for calls. Set both or leave both empty.
+      - key: CLOUDFLARE_TURN_KEY_ID
+        sync: false
+      - key: CLOUDFLARE_TURN_API_TOKEN
+        sync: false
