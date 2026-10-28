@@ -107,6 +107,10 @@ export function httpApi(): ClinicApi {
       return orNull(json<CareTeam>("/me/care-team", { token: ctx.accessToken }));
     },
 
+    getMyMedications(ctx) {
+      return json<Medication[]>("/me/medications", { token: ctx.accessToken });
+    },
+
     prescribe(ctx, patientId, rx) {
       return json<Medication>(medications(patientId), { method: "POST", body: rx, token: ctx.accessToken });
     },

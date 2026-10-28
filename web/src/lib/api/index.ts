@@ -32,6 +32,8 @@ export interface ClinicApi {
   getPatient(ctx: ApiContext, id: string): Promise<Patient | null>;
   /** For a signed-in patient: themselves and their assigned doctor. Null if not found. */
   getCareTeam(ctx: ApiContext): Promise<CareTeam | null>;
+  /** For a signed-in patient: their own prescriptions, active first. */
+  getMyMedications(ctx: ApiContext): Promise<Medication[]>;
 
   /** Doctor only, for their own patients. 409 if the same drug is already active. */
   prescribe(ctx: ApiContext, patientId: string, rx: NewPrescription): Promise<Medication>;

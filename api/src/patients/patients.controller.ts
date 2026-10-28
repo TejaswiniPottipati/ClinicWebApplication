@@ -125,4 +125,10 @@ export class MeController {
   careTeam(@CurrentUser() user: AuthUser) {
     return this.patients.getCareTeam(user.id);
   }
+
+  /** The signed-in patient's own prescriptions. */
+  @Get('medications')
+  medications(@CurrentUser() user: AuthUser) {
+    return this.patients.getMyMedications(user.id);
+  }
 }

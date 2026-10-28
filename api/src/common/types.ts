@@ -203,6 +203,7 @@ export interface IceServer {
 export type RealtimeEvent =
   | { type: 'message'; message: Message }
   | { type: 'call'; call: Call }
+  | { type: 'medication'; medication: Medication }
   | { type: 'signal'; callId: string; data: SignalData };
 
 /** A user as identified by their access token. */
