@@ -17,6 +17,7 @@ import {
   PatientsRepository,
   type PatientFilter,
 } from '../data/patients.repository.js';
+import { RealtimeService } from '../realtime/realtime.service.js';
 
 export interface NewPrescription {
   name: string;
@@ -55,7 +56,10 @@ function toSummary(p: Patient): PatientSummary {
 
 @Injectable()
 export class PatientsService {
-  constructor(private readonly repo: PatientsRepository) {}
+  constructor(
+    private readonly repo: PatientsRepository,
+    private readonly realtime: RealtimeService,
+  ) {}
 
   async listForDoctor(
     doctorId: string,
@@ -88,7 +92,7 @@ export class PatientsService {
         `${duplicate.name} is already an active medication. Discontinue it first to change the prescription.`,
       );
     }
-    return this.repo.addMedication(patient.id, {
+    const medication = await this.repo.addMedication(patient.id, {
       id: randomUUID(),
       name: rx.name,
       dosage: rx.dosage,
@@ -100,6 +104,7 @@ export class PatientsService {
       endedOn: null,
       prescribedBy: { id: doctor.id, name: doctor.name },
     });
+    return this.notifyPatient(patient.id, medication);
   }
 
   /** Stops an active medication; it stays on the record as history. */
@@ -116,7 +121,27 @@ export class PatientsService {
     // Never before it started (a prescription dated in the future, stopped today).
     const endedOn =
       today() < medication.startedOn ? medication.startedOn : today();
-    return this.repo.discontinueMedication(medication.id, endedOn);
+    const stopped = await this.repo.discontinueMedication(
+      medication.id,
+      endedOn,
+    );
+    return this.notifyPatient(patientId, stopped);
+  }
+
+  /** For a signed-in patient: their own prescriptions, active first, then history. */
+  async getMyMedications(patientId: string): Promise<Medication[]> {
+    const patient = await this.repo.findPatient(patientId);
+    if (!patient) throw new NotFoundException('Patient not found.');
+    return patient.medications;
+  }
+
+  /** Lets the patient's open portal show a prescription change straight away. */
+  private notifyPatient(patientId: string, medication: Medication) {
+    this.realtime.publish([{ role: 'patient', id: patientId }], {
+      type: 'medication',
+      medication,
+    });
+    return medication;
   }
 
   async getCareTeam(patientId: string): Promise<CareTeam> {

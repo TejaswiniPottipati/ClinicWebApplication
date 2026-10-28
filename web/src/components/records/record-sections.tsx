@@ -71,7 +71,7 @@ export function Medications({ patient }: { patient: Patient }) {
   );
 }
 
-function MedicationDetails({ m, muted }: { m: Medication; muted?: boolean }) {
+export function MedicationDetails({ m, muted }: { m: Medication; muted?: boolean }) {
   return (
     <div className="min-w-0">
       <p className={`font-medium ${muted ? "text-slate-600" : ""}`}>

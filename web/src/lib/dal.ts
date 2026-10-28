@@ -67,6 +67,11 @@ export const getMyCareTeam = cache(async () => {
   return team;
 });
 
+/** The patient's own prescriptions. */
+export async function getMyMedications() {
+  return api.getMyMedications(context(await patientSession()));
+}
+
 /** Message history with the patient's own doctor. */
 export async function getMyConversation() {
   const session = await patientSession();

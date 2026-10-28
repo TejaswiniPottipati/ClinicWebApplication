@@ -2,7 +2,8 @@ import type { Metadata } from "next";
 import { Suspense } from "react";
 import { Conversation } from "@/components/chat/conversation";
 import { PhoneIcon } from "@/components/icons";
-import { getMyCareTeam, getMyConversation } from "@/lib/dal";
+import { MyMedications } from "@/components/records/my-medications";
+import { getMyCareTeam, getMyConversation, getMyMedications } from "@/lib/dal";
 import { initials } from "@/lib/format";
 
 export const metadata: Metadata = { title: "My care" };
@@ -16,7 +17,11 @@ export default function PortalHome() {
 }
 
 async function PortalView() {
-  const [{ doctor, patient }, messages] = await Promise.all([getMyCareTeam(), getMyConversation()]);
+  const [{ doctor, patient }, messages, medications] = await Promise.all([
+    getMyCareTeam(),
+    getMyConversation(),
+    getMyMedications(),
+  ]);
 
   return (
     <div className="grid flex-1 gap-6 lg:grid-cols-[280px_1fr]">
@@ -33,6 +38,8 @@ async function PortalView() {
             </div>
           </div>
         </section>
+
+        <MyMedications medications={medications} />
 
         <section className="rounded-2xl border border-teal-200 bg-teal-50 p-5 text-sm text-teal-900">
           <p className="flex items-center gap-2 font-medium">

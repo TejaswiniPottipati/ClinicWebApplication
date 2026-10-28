@@ -196,6 +196,18 @@ describe('patients', () => {
     });
     await api().get('/me/care-team').set(auth(PHYSICIAN)).expect(403);
   });
+
+  it('gives patients their own medications only', async () => {
+    const mine = await api()
+      .get('/me/medications')
+      .set(auth(PATIENT))
+      .expect(200);
+    const record = await api().get('/patients/P-1001').set(auth(PHYSICIAN));
+    expect(mine.body).toEqual(record.body.medications);
+    expect(mine.body.length).toBeGreaterThan(0);
+    await api().get('/me/medications').set(auth(PHYSICIAN)).expect(403);
+    await api().get('/me/medications').expect(401);
+  });
 });
 
 describe('clinical records', () => {
@@ -291,6 +303,37 @@ describe('clinical records', () => {
     expect(record.body.medications.map((m: any) => m.id)).toContain(
       created.body.id,
     );
+  });
+
+  it('tells the patient live when a prescription changes', async () => {
+    const patientStream = await openStream(PATIENT);
+    const surgeonStream = await openStream(SURGEON);
+    const medications = (events: RealtimeEvent[]) =>
+      events.flatMap((e) => (e.type === 'medication' ? [e.medication] : []));
+
+    const created = await api()
+      .post('/patients/P-1001/medications')
+      .set(auth(PHYSICIAN))
+      .send({
+        name: 'Cetirizine',
+        dosage: '10 mg',
+        frequency: 'Once daily',
+        route: 'Oral',
+      })
+      .expect(201);
+    await api()
+      .post(`/patients/P-1001/medications/${created.body.id}/discontinue`)
+      .set(auth(PHYSICIAN))
+      .expect(200);
+
+    await until(() => medications(patientStream.events).length === 2);
+    expect(medications(patientStream.events)).toEqual([
+      expect.objectContaining({ id: created.body.id, status: 'active' }),
+      expect.objectContaining({ id: created.body.id, status: 'discontinued' }),
+    ]);
+    expect(surgeonStream.events).toHaveLength(0);
+
+    for (const s of [patientStream, surgeonStream]) s.close();
   });
 
   it("is limited to the patient's own doctor", async () => {

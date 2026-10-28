@@ -188,6 +188,7 @@ export type SignalData =
 export type RealtimeEvent =
   | { type: "message"; message: Message }
   | { type: "call"; call: Call }
+  | { type: "medication"; medication: Medication }
   | { type: "signal"; callId: string; data: SignalData };
 
 export const PATIENT_STATUSES: PatientStatus[] = [
