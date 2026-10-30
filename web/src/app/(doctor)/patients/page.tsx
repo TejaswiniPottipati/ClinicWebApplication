@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { Suspense } from "react";
+import { Suspense, type ReactNode } from "react";
 import { StatusBadge } from "@/components/status-badge";
 import { getMyPatients } from "@/lib/dal";
 import { ageFrom, formatDate, formatDateTime } from "@/lib/format";
@@ -124,30 +124,30 @@ async function PatientsView({
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {patients.map((p) => (
-                  <tr key={p.id} className="group relative hover:bg-slate-50">
-                    <td className="px-4 py-3">
-                      <Link
-                        href={`/patients/${p.id}`}
-                        className="font-medium text-slate-900 after:absolute after:inset-0 group-hover:text-teal-700"
-                      >
-                        {p.name}
-                      </Link>
-                      <p className="font-mono text-xs text-slate-500">{p.id}</p>
-                    </td>
-                    <td className="px-4 py-3 text-slate-600">
-                      {ageFrom(p.dateOfBirth, now)} · {p.gender[0]}
-                    </td>
-                    <td className="px-4 py-3 text-slate-600">{p.conditions.join(", ")}</td>
-                    <td className="px-4 py-3">
-                      <StatusBadge status={p.status} />
-                    </td>
-                    <td className="px-4 py-3 text-slate-600">{formatDate(p.lastVisit)}</td>
-                    <td className="px-4 py-3 text-slate-600">
-                      {p.nextAppointment ? formatDateTime(p.nextAppointment) : <span className="text-slate-400">—</span>}
-                    </td>
-                  </tr>
-                ))}
+                {patients.map((p) => {
+                  const href = `/patients/${p.id}`;
+                  return (
+                    <tr key={p.id} className="group hover:bg-slate-50">
+                      <td className="p-0">
+                        <Link href={href} className="block px-4 py-3">
+                          <span className="font-medium text-slate-900 group-hover:text-teal-700">{p.name}</span>
+                          <span className="block font-mono text-xs text-slate-500">{p.id}</span>
+                        </Link>
+                      </td>
+                      <RowCell href={href}>
+                        {ageFrom(p.dateOfBirth, now)} · {p.gender[0]}
+                      </RowCell>
+                      <RowCell href={href}>{p.conditions.join(", ")}</RowCell>
+                      <RowCell href={href}>
+                        <StatusBadge status={p.status} />
+                      </RowCell>
+                      <RowCell href={href}>{formatDate(p.lastVisit)}</RowCell>
+                      <RowCell href={href}>
+                        {p.nextAppointment ? formatDateTime(p.nextAppointment) : <span className="text-slate-400">—</span>}
+                      </RowCell>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -157,6 +157,21 @@ async function PatientsView({
         Showing {patients.length} of {all.length} patients
       </p>
     </>
+  );
+}
+
+/**
+ * A table cell that opens the row's patient. Each cell links on its own because browsers don't
+ * reliably let a <tr> contain a link stretched over the whole row. Only the name link is
+ * focusable and announced, so keyboard and screen-reader users get one link per patient.
+ */
+function RowCell({ href, children }: { href: string; children: ReactNode }) {
+  return (
+    <td className="p-0">
+      <Link href={href} tabIndex={-1} aria-hidden className="block px-4 py-3 text-slate-600">
+        {children}
+      </Link>
+    </td>
   );
 }
 
